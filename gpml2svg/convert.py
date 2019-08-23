@@ -13,7 +13,7 @@ LATEST_GPML_VERSION = "2013a"
 
 def convert(path_in, path_out, ID, PATHWAY_VERSION, scale=100):
     if not path.exists(path_in):
-        raise Exception("Missing file '{}'".format(path_in))
+        raise Exception(f"Missing file '{path_in}'")
 
     dir_in = path.dirname(path_in)
     base_in = path.basename(path_in)
@@ -29,7 +29,7 @@ def convert(path_in, path_out, ID, PATHWAY_VERSION, scale=100):
         )
         if wp_id and pathway_version_candidate:
             if not ID:
-                ID = "http://identifiers.org/wikipathways/{}".format(wp_id)
+                ID = f"http://identifiers.org/wikipathways/{wp_id}"
             if not PATHWAY_VERSION:
                 PATHWAY_VERSION = pathway_version_candidate
 
@@ -39,7 +39,7 @@ def convert(path_in, path_out, ID, PATHWAY_VERSION, scale=100):
     # get rid of the leading dot
     ext_out = LEADING_DOT_RE.sub("", ext_out_with_dot)
 
-    gpml_f = "{}/{}.gpml".format(dir_in, stub_in)
+    gpml_f = f"{dir_in}/{stub_in}.gpml"
 
     ns = {"gpml": "http://pathvisio.org/GPML/2013a"}
 
@@ -57,21 +57,19 @@ def convert(path_in, path_out, ID, PATHWAY_VERSION, scale=100):
             r"{http://pathvisio.org/GPML/(\w+)}Pathway", r"\1", root.tag
         )
         if gpml_version != LATEST_GPML_VERSION:
-            old_f = "{}/{}.{}.gpml".format(dir_in, stub_in, gpml_version)
+            old_f = f"{dir_in}/{stub_in}.{gpml_version}.gpml"
             rename(gpml_f, old_f)
-            subprocess.run(shlex.split("pathvisio convert {} {}".format(old_f, gpml_f)))
+            subprocess.run(shlex.split(f"pathvisio convert {old_f} {gpml_f}"))
 
     if path.exists(path_out):
         return True
 
     if ext_out in ["gpml", "owl", "pdf", "pwf", "txt"]:
-        subprocess.run(shlex.split("pathvisio convert {} {}".format(path_in, path_out)))
+        subprocess.run(shlex.split(f"pathvisio convert {path_in} {path_out}"))
     elif ext_out == "png":
         # TODO: look at using --scale as an option (instead of an argument), for both pathvisio and gpmlconverter.
         # TODO: move the setting of a default value for scale into pathvisio instead of here.
-        subprocess.run(
-            shlex.split("pathvisio convert {} {} {}".format(path_in, path_out, scale))
-        )
+        subprocess.run(shlex.split(f"pathvisio convert {path_in} {path_out} {scale}"))
         # Use interlacing? See https://github.com/PathVisio/pathvisio/issues/78
         # It's probably not worthwhile. If we did it, we would need to install imagemagick and then run this:
         # mv "$path_out" "$path_out.noninterlaced.png"
@@ -83,33 +81,40 @@ def convert(path_in, path_out, ID, PATHWAY_VERSION, scale=100):
         # bridgedbjs also fails when an identifier is something like 'undefined'.
         # Should it ignore datasources/identifiers it doesn't recognize and just
         # keep going?
-        gpml2pvjson_cmd = "gpml2pvjson --id {} --pathway-version {} < {} > {}".format(
-            ID, PATHWAY_VERSION, path_in, path_out
-        )
-        print(gpml2pvjson_cmd)
-        # subprocess.run(shlex.split(gpml2pvjson_cmd))
-        subprocess.run(shlex.split("touch {}".format(path_out)))
+
+        gpml2pvjson_cmd = f"gpml2pvjson --id {ID} --pathway-version {PATHWAY_VERSION}"
+        with open(path_in, "r") as f_in:
+            with open(path_out, "w") as f_out:
+                gpml2pvjson_ps = subprocess.Popen(
+                    shlex.split(gpml2pvjson_cmd), stdin=f_in, stdout=f_out, shell=False
+                )
+                gpml2pvjson_ps.communicate()[0]
+
         if (not organism) or (not xref_identifiers):
             print("No xrefs to process.")
         else:
-            rename(path_out, "{}.b4bridgedb.json".format(path_out))
-            bridgedb_cmd = """bridgedb xrefs -f json \
-                -i '.entitiesById[].type' "{}" '.entitiesById[].xrefDataSource' '.entitiesById[].xrefIdentifier' \
-                ChEBI P683 Ensembl P594 "Entrez Gene" P351 HGNC P353 HMDB P2057 Wikidata \
-               < "{}.b4bridgedb.json" > "{}"
-            """.format(
-                organism, path_out, path_out
-            )
-            print(bridgedb_cmd)
-            # subprocess.run(shlex.split(bridgedb_cmd))
-            subprocess.run(shlex.split("touch {}".format(path_out)))
+            rename(path_out, f"{path_out}.b4bridgedb.json")
+
+            bridgedb_cmd = f"""bridgedb xrefs -f json \
+                -i '.entitiesById[].type' "{organism}" '.entitiesById[].xrefDataSource' '.entitiesById[].xrefIdentifier' \
+                ChEBI P683 Ensembl P594 "Entrez Gene" P351 HGNC P353 HMDB P2057 Wikidata
+            """
+            with open(f"{path_out}.b4bridgedb.json", "r") as f_in:
+                with open(path_out, "w") as f_out:
+                    bridgedb_ps = subprocess.Popen(
+                        shlex.split(bridgedb_cmd), stdin=f_in, stdout=f_out, shell=False
+                    )
+                    bridgedb_ps.communicate()[0]
 
             # Add Wikidata ids
-            add_wd_ids_cmd = "add_wd_ids {}".format(path_out)
+            # TODO rewrite JavaScript file ./other/js/add_wd_ids as a Python script
+            # will require using a Python Wikidata client library.
+            add_wd_ids_cmd = f"add_wd_ids {path_out}"
             print(add_wd_ids_cmd)
             # subprocess.run(shlex.split(add_wd_ids_cmd))
 
 
+# TODO convert the following sh script to Python
 """
 elif [[ "$ext_out" =~ ^(svg|pvjssvg)$ ]]; then
   #############################
