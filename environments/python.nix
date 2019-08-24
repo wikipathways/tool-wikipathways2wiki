@@ -7,6 +7,7 @@ let
 in common ++ [
 
   pkgs.python3
+  pkgs.pypi2nix
   custom.black
 
 ] ++ (if stdenv.isDarwin then [
