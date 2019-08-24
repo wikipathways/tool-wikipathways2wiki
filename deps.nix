@@ -18,6 +18,7 @@ in
     custom.bridgedb
     custom.gpml2pvjson
     custom.pvjs
+    custom.pywikibot
 
     pkgs.coreutils
     pkgs.xmlstarlet

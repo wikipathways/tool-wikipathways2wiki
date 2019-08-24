@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 
+# python3 gpml2svg/convert.py ../WP4542/WP4542_103412.gpml ./hey.json
 # python3 gpml2svg/convert.py ../WP4542/WP4542_103412.gpml ../WP4542/WP4542_103412.json
 # python3 gpml2svg/convert.py ../WP4542/WP4542_103412.gpml ../WP4542/WP4542_103412.svg
 
 import argparse, re, shlex, subprocess
 import xml.etree.ElementTree as ET
 from os import path, rename
+import pywikibot
+from pywikibot.data import sparql
 
 LEADING_DOT_RE = re.compile(r"^\.")
+NON_ALPHANUMERIC_RE = re.compile(r"\W")
 LATEST_GPML_VERSION = "2013a"
 
 
@@ -15,6 +19,7 @@ def convert(path_in, path_out, ID, PATHWAY_VERSION, scale=100):
     if not path.exists(path_in):
         raise Exception(f"Missing file '{path_in}'")
 
+    # back to gpml2svg
     dir_in = path.dirname(path_in)
     base_in = path.basename(path_in)
     [stub_in, ext_in_with_dot] = path.splitext(base_in)
@@ -40,6 +45,7 @@ def convert(path_in, path_out, ID, PATHWAY_VERSION, scale=100):
     ext_out = LEADING_DOT_RE.sub("", ext_out_with_dot)
 
     gpml_f = f"{dir_in}/{stub_in}.gpml"
+    print(f"gpml_f: {gpml_f}")
 
     ns = {"gpml": "http://pathvisio.org/GPML/2013a"}
 
@@ -62,6 +68,7 @@ def convert(path_in, path_out, ID, PATHWAY_VERSION, scale=100):
             subprocess.run(shlex.split(f"pathvisio convert {old_f} {gpml_f}"))
 
     if path.exists(path_out):
+        print(f"File {path_out} already exists. Skipping.")
         return True
 
     if ext_out in ["gpml", "owl", "pdf", "pwf", "txt"]:
@@ -112,6 +119,60 @@ def convert(path_in, path_out, ID, PATHWAY_VERSION, scale=100):
             add_wd_ids_cmd = f"add_wd_ids {path_out}"
             print(add_wd_ids_cmd)
             # subprocess.run(shlex.split(add_wd_ids_cmd))
+
+            # trying to get wd ids via sparql via pywikibot
+            site = pywikibot.Site("wikidata", "wikidata")
+            repo = site.data_repository()  # this is a DataSite object
+            myquery = sparql.SparqlQuery(
+                endpoint="https://query.wikidata.org/sparql", repo=repo
+            )
+            # (self, endpoint=None, entity_url=None, repo=None, 2 max_retries=None, retry_wait=None)
+            myresult = myquery.query(
+                '''
+SELECT ?item WHERE {
+	?item wdt:P2410 "'''
+                + wp_id
+                + """" . 
+	SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
+}"""
+            )
+            # print(myresult)
+
+            qurl = myresult["results"]["bindings"][0]["item"]["value"]
+            print(f"qurl: {qurl}")
+
+            # TODO: get xrefs from JSON.
+            # convert datasource to a wikidata property
+            # query wikidata via sparql to get qurls
+
+            bridgedb2wd_props = dict()
+            bridgedb2wd_props["Ensembl"] = "P594"
+            bridgedb2wd_props["Entrez Gene"] = "P351"
+            xrefs = [["Ensembl", "ENSG00000151748"], ["Entrez Gene", "6788"]]
+            headings = []
+            queries = []
+            for i, xref in enumerate(xrefs):
+                [datasource, ID] = xref
+                heading = "?" + NON_ALPHANUMERIC_RE.sub("", datasource + ID)
+                headings.append(heading)
+                wd_prop = bridgedb2wd_props[datasource]
+                queries.append(f'{heading} wdt:{wd_prop} "{ID}" .')
+            headings_str = " ".join(headings)
+            queries_str = (
+                "WHERE { "
+                + " ".join(queries)
+                + ' SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }}'
+            )
+            xref_query = f"SELECT {headings_str} {queries_str}"
+            xref_result = myquery.query(xref_query)
+
+            bridgedb_keys = xref_result["head"]["vars"]
+            for binding in xref_result["results"]["bindings"]:
+                for bridgedb_key in bridgedb_keys:
+                    value = binding[bridgedb_key]["value"].replace(
+                        "http://www.wikidata.org/entity/", ""
+                    )
+                    print(f"{bridgedb_key}: {value}")
 
 
 # TODO convert the following sh script to Python
