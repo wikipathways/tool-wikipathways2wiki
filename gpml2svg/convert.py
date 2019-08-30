@@ -4,18 +4,41 @@
 # python3 gpml2svg/convert.py ../WP4542/WP4542_103412.gpml ../WP4542/WP4542_103412.json
 # python3 gpml2svg/convert.py ../WP4542/WP4542_103412.gpml ../WP4542/WP4542_103412.svg
 
-import argparse, re, shlex, subprocess
 import xml.etree.ElementTree as ET
+import argparse
+import csv
+import json
+import re
+import shlex
+import subprocess
+
 from os import path, rename
+import requests
 import pywikibot
+
 from pywikibot.data import sparql
 
+WPID_EXACT_RE = re.compile(r"^(WP\d+)$")
+WPID_CONTAINED_RE = re.compile(r"^(WP\d+)$")
 LEADING_DOT_RE = re.compile(r"^\.")
 NON_ALPHANUMERIC_RE = re.compile(r"\W")
 LATEST_GPML_VERSION = "2013a"
 
+# let g:LanguageClient_selectionUI="quickfix"
+# call LanguageClient#setDiagnosticsList("quickfix")
+# let g:LanguageClient_selectionUI_autoOpen=0
+# call LanguageClient#binaryPath()
 
-def convert(path_in, path_out, ID, PATHWAY_VERSION, scale=100):
+bridgedb2wd_props_request = requests.get(
+    "https://raw.githubusercontent.com/bridgedb/BridgeDb/master/org.bridgedb.bio/resources/org/bridgedb/bio/datasources.tsv"
+)
+BRIDGEDB2WD_PROPS = dict()
+for row in csv.DictReader(
+        bridgedb2wd_props_request.text.splitlines(), delim="\t"):
+    BRIDGEDB2WD_PROPS[row["datasource_name"]] = row["wikidata_property"]
+
+
+def convert(path_in, path_out, pathway_id, pathway_version, scale=100):
     if not path.exists(path_in):
         raise Exception(f"Missing file '{path_in}'")
 
@@ -26,17 +49,17 @@ def convert(path_in, path_out, ID, PATHWAY_VERSION, scale=100):
     # get rid of the leading dot
     ext_in = LEADING_DOT_RE.sub("", ext_in_with_dot)
 
-    if (not ID) or (not PATHWAY_VERSION):
+    if (not pathway_id) or (not pathway_version):
         basename_parts = stub_in.split("_")
         wp_id = basename_parts[0]
         pathway_version_candidate = (
             int(basename_parts[1]) if len(basename_parts) == 2 else None
         )
         if wp_id and pathway_version_candidate:
-            if not ID:
-                ID = f"http://identifiers.org/wikipathways/{wp_id}"
-            if not PATHWAY_VERSION:
-                PATHWAY_VERSION = pathway_version_candidate
+            if not pathway_id:
+                pathway_id = f"http://identifiers.org/wikipathways/{wp_id}"
+            if not pathway_version:
+                pathway_version = pathway_version_candidate
 
     dir_out = path.dirname(path_out)
     base_out = path.basename(path_out)
@@ -89,7 +112,9 @@ def convert(path_in, path_out, ID, PATHWAY_VERSION, scale=100):
         # Should it ignore datasources/identifiers it doesn't recognize and just
         # keep going?
 
-        gpml2pvjson_cmd = f"gpml2pvjson --id {ID} --pathway-version {PATHWAY_VERSION}"
+        gpml2pvjson_cmd = (
+            f"gpml2pvjson --id {pathway_id} --pathway-version {pathway_version}"
+        )
         with open(path_in, "r") as f_in:
             with open(path_out, "w") as f_out:
                 gpml2pvjson_ps = subprocess.Popen(
@@ -113,6 +138,16 @@ def convert(path_in, path_out, ID, PATHWAY_VERSION, scale=100):
                     )
                     bridgedb_ps.communicate()[0]
 
+            no_wikidata_entities = list()
+            with open(f"{path_out}.json", "r") as f:
+                pathway_data = json.load(f)
+                entities_by_id = pathway_data["entitiesByID"]
+                for entity in entities_by_id:
+                    if "xrefIdentifier" in entity
+                    and "xrefDataSource" in entity
+                    and entity["xrefDataSource"] in BRIDGEDB2WD_PROPS:
+                        print(entity)
+
             # Add Wikidata ids
             # TODO rewrite JavaScript file ./other/js/add_wd_ids as a Python script
             # will require using a Python Wikidata client library.
@@ -130,10 +165,8 @@ def convert(path_in, path_out, ID, PATHWAY_VERSION, scale=100):
             myresult = myquery.query(
                 '''
 SELECT ?item WHERE {
-	?item wdt:P2410 "'''
-                + wp_id
-                + """" . 
-	SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
+    ?item wdt:P2410 "''' + wp_id + """" .
+    SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
 }"""
             )
             # print(myresult)
@@ -159,7 +192,7 @@ SELECT ?item WHERE {
                 queries.append(f'{heading} wdt:{wd_prop} "{ID}" .')
             headings_str = " ".join(headings)
             queries_str = (
-                "WHERE { "
+                "WHERE { " +
                 + " ".join(queries)
                 + ' SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }}'
             )
@@ -188,7 +221,7 @@ elif [[ "$ext_out" =~ ^(svg|pvjssvg)$ ]]; then
 #  third_extension_out="${second_ext_out%.*}"
 
   json_f="$dir_out/$bare_stub_out.json"
-  "$SCRIPT_DIR/gpmlconverter" --id "$ID" --pathway-version "$PATHWAY_VERSION" "$path_in" "$json_f"
+  "$SCRIPT_DIR/gpmlconverter" --id "$pathway_id" --pathway-version "$PATHWAY_VERSION" "$path_in" "$json_f"
 
   metabolite_patterns_css_f="$dir_out/$bare_stub_out.metabolite-patterns-uri.css"
   metabolite_patterns_svg_f="$dir_out/$bare_stub_out.metabolite-patterns-uri.svg"
@@ -219,10 +252,10 @@ r /dev/stdin
     # We have the patterns in case we want to do anything with
     # them later on, but we don't have the busy hover effects.
     xmlstarlet ed -L -O -N svg='http://www.w3.org/2000/svg' \
-  		  -u "/svg:svg/svg:style/text()" \
-  		  -v "
+            -u "/svg:svg/svg:style/text()" \
+            -v "
 " \
-		  "$path_out"
+        "$path_out"
 
     sed -i '/<style.*>/{
 r '"$SCRIPT_DIR/../plain.css"'
@@ -233,10 +266,10 @@ r '"$SCRIPT_DIR/../plain.css"'
     #############################
     path_out_dark_pvjssvg="$dir_out/$bare_stub_out.dark.pvjssvg"
     cat "$path_out" | xmlstarlet ed -O -N svg='http://www.w3.org/2000/svg' \
-  		  -u "/svg:svg/svg:style/text()" \
-  		  -v "
+            -u "/svg:svg/svg:style/text()" \
+            -v "
 " > \
-		  "$path_out_dark_pvjssvg"
+        "$path_out_dark_pvjssvg"
 
     sed -i '/<style.*>/{
 r '"$SCRIPT_DIR/../dark.css"'
@@ -253,22 +286,22 @@ r '"$SCRIPT_DIR/../dark.css"'
     # https://commons.wikimedia.org/wiki/Commons:Commons_SVG_Checker?withJS=MediaWiki:CommonsSvgChecker.js
     # The W3 validator might be outdated. It doesn't allow for RDFa attributes.
     # http://validator.w3.org/#validate_by_upload+with_options
-  
-  
+
+
     # WM says: "the recommended image height is around 400–600 pixels. When a
     #           user views the full size image, a width of 600–800 pixels gives
     #           them a good close-up view"
     # https://commons.wikimedia.org/wiki/Help:SVG#Frequently_asked_questions
-  
+
     pvjs < "$json_f" | \
       xmlstarlet ed -N svg='http://www.w3.org/2000/svg' \
                     -i '/svg:svg' --type attr -n width -v '800px' \
                     -i '/svg:svg' --type attr -n height -v '600px' \
-  		    -u "/svg:svg/svg:style/text()" \
-  		    -v "
+                    -u "/svg:svg/svg:style/text()" \
+                    -v "
 " \
       > "$path_out"
-  
+
     fix_pvjs_bugs "$path_out"
 
     sed -i '/<style.*>/{
@@ -282,38 +315,38 @@ r /dev/stdin
     edge_count=$(cat "$path_out" | xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v 'count(/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')])')
     for i in $(seq $edge_count); do
       xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-  		    -m "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')][$i]/svg:g/svg:path" \
-		    "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')][$i]" \
-		    "$path_out";
+              -m "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')][$i]/svg:g/svg:path" \
+              "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')][$i]" \
+              "$path_out";
     done
 
     xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-  		  -m "/svg:svg/svg:defs/svg:g[@id='jic-defs']/svg:svg/svg:defs/*" \
-		     "/svg:svg/svg:defs/svg:g[@id='jic-defs']" \
-  		  -d "/svg:svg/svg:defs/svg:g[@id='jic-defs']/svg:svg" \
-		  "$path_out";
+            -m "/svg:svg/svg:defs/svg:g[@id='jic-defs']/svg:svg/svg:defs/*" \
+            "/svg:svg/svg:defs/svg:g[@id='jic-defs']" \
+            -d "/svg:svg/svg:defs/svg:g[@id='jic-defs']/svg:svg" \
+            "$path_out";
 
     for attr in "filter" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"; do
       xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                    -i "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]" -t attr -n "$attr" -v "REPLACE_ME" \
-		    -u "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]/@$attr" \
-		    -x "string(../svg:g/@$attr)" \
-		    "$path_out"
+              -i "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]" -t attr -n "$attr" -v "REPLACE_ME" \
+              -u "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]/@$attr" \
+              -x "string(../svg:g/@$attr)" \
+              "$path_out"
     done
-  
+
     for attr in "color" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"; do
       xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
                     -i "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]/svg:path" -t attr -n "$attr" -v "REPLACE_ME" \
-  		    -u "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]/svg:path/@$attr" \
-		    -x "string(../../svg:g/@$attr)" \
-		    "$path_out"
+                    -u "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]/svg:path/@$attr" \
+                    -x "string(../../svg:g/@$attr)" \
+                    "$path_out"
     done
-  
+
     xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
                   -d "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]/svg:g" \
-		  -d "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]/svg:path/@style" \
-		  "$path_out"
-  
+                  -d "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]/svg:path/@style" \
+                  "$path_out"
+
     # Which of the following is correct?
     # To make the SVG file independent of Arial, change all occurrences of
     #   font-family: Arial to font-family: 'Liberation Sans', Arial, sans-serif
@@ -323,11 +356,11 @@ r /dev/stdin
     #   (internally quoted font family name) does not work
     #   (File:Mathematical_implication_diagram-alt.svg, File:T184369.svg)
     #   https://commons.wikimedia.org/wiki/Commons:Commons_SVG_Checker?withJS=MediaWiki:CommonsSvgChecker.js
-  
+
     # The kerning for Liberation Sans has some issues, at least when run through librsvg.
     # Liberation Sans is the open replacement for Arial, but DejaVu Sans with transform="scale(0.92,0.98)"
     # might have better kerning while taking up about the same amount of space.
-  
+
     # Long-term, should we switch our default font from Arial to something prettier?
     # It would have to be a well-supported font.
     # This page <https://commons.wikimedia.org/wiki/Help:SVG#fallback> says:
@@ -337,39 +370,39 @@ r /dev/stdin
     #     In graphic illustrations metric exact text elements are often important
     #     and Arial can be seen as de-facto standard for such a feature.
     xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-  		  -u "//*[contains(@font-family,'Arial')]/@font-family" \
-		  -v "'Liberation Sans', Arial, sans-serif" \
-		  "$path_out"
+            -u "//*[contains(@font-family,'Arial')]/@font-family" \
+            -v "'Liberation Sans', Arial, sans-serif" \
+            "$path_out"
     xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-  		  -u "//*[contains(@font-family,'arial')]/@font-family" \
-		  -v "'Liberation Sans', Arial, sans-serif" \
-		  "$path_out"
-  
+            -u "//*[contains(@font-family,'arial')]/@font-family" \
+            -v "'Liberation Sans', Arial, sans-serif" \
+            "$path_out"
+
     xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                  -i "/svg:svg/svg:defs/svg:g/svg:marker/svg:path[not(@fill)]" -t attr -n "fill" -v "REPLACE_ME" \
-		  -u "/svg:svg/svg:defs/svg:g/svg:marker/svg:path[@fill='REPLACE_ME']/@fill" \
-		  -v "currentColor" \
-		  "$path_out"
- 
+            -i "/svg:svg/svg:defs/svg:g/svg:marker/svg:path[not(@fill)]" -t attr -n "fill" -v "REPLACE_ME" \
+            -u "/svg:svg/svg:defs/svg:g/svg:marker/svg:path[@fill='REPLACE_ME']/@fill" \
+            -v "currentColor" \
+            "$path_out"
+
 #  		  -u "/svg:svg/@color" \
 #		  -v "black" \
 #		  -u "/svg:svg/svg:g/@color" \
 #		  -v "black" \
     xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-		  -u "/svg:svg/svg:g//svg:text[@stroke-width='0.05px']/@stroke-width" \
-		  -v "0px" \
-		  -d "/svg:svg/svg:g//*/svg:text/@overflow" \
-		  -d "/svg:svg/svg:g//*/svg:text/@dominant-baseline" \
-		  -d "/svg:svg/svg:g//*/svg:text/@clip-path" \
-		  -d "/svg:svg/svg:g//svg:defs" \
-		  -d "/svg:svg/svg:g//svg:text[@stroke-width='0.05px']/@stroke-width" \
-		  "$path_out";
+    -u "/svg:svg/svg:g//svg:text[@stroke-width='0.05px']/@stroke-width" \
+    -v "0px" \
+    -d "/svg:svg/svg:g//*/svg:text/@overflow" \
+    -d "/svg:svg/svg:g//*/svg:text/@dominant-baseline" \
+    -d "/svg:svg/svg:g//*/svg:text/@clip-path" \
+    -d "/svg:svg/svg:g//svg:defs" \
+    -d "/svg:svg/svg:g//svg:text[@stroke-width='0.05px']/@stroke-width" \
+    "$path_out";
 
     # We are pushing the text down based on font size.
     # This is needed because librsvg doesn't support attribute "alignment-baseline".
     el_count=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "count(/svg:svg/svg:g//svg:text)" "$path_out")
     for i in $(seq $el_count); do
-      font_size=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//svg:text)[$i]/@font-size" "$path_out" | sed 's/^\([0-9.]*\)px$/\1/g');
+        font_size=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//svg:text)[$i]/@font-size" "$path_out" | sed 's/^\([0-9.]*\)px$/\1/g');
       font_size=${font_size:-5}
       x_translation=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//svg:text)[$i]/@transform" "$path_out" | sed 's/^translate[(]\([0-9.]*\),\([0-9.]*\)[)]$/\1/g');
       y_translation=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//svg:text)[$i]/@transform" "$path_out" | sed 's/^translate[(]\([0-9.]*\),\([0-9.]*\)[)]$/\2/g');
@@ -573,7 +606,7 @@ def main():
     )
 
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--id", type=str, help="WikiPathways ID, e.g., WP1243")
+    group.add_argument("--pathway-id", type=str, help="WikiPathways ID, e.g., WP1243")
     group.add_argument(
         "--pathway-version", type=str, help="WikiPathways revision (oldid), e.g., 69897"
     )
@@ -591,8 +624,8 @@ def main():
         convert(
             args.input,
             args.output,
-            ID=args.id,
-            PATHWAY_VERSION=args.pathway_version,
+            pathway_id=args.pathway_id,
+            pathway_version=args.pathway_version,
             scale=args.scale,
         )
         print("otherwise")

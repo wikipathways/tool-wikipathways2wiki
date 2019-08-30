@@ -6,3 +6,4 @@ user-config.py
 apicache-py3/
 throttle.ctrl
 pywikibot.lwp
+.mypy_cache/

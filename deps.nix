@@ -1,6 +1,6 @@
 with import <nixpkgs> { config.allowUnfree = true; };
 let
-  deps = import ./mynixpkgs/environments/python.nix;
+  pythonEnv = import ./mynixpkgs/environments/python.nix;
   custom = import ./mynixpkgs/all-custom.nix;
   pathvisio = callPackage ./mynixpkgs/pathvisio/default.nix {
     organism="Homo sapiens";
@@ -13,7 +13,9 @@ let
     memory="2048m";
   };
 in
-  deps ++ [
+  pythonEnv ++ [
+    pkgs.python37Packages.requests
+
     pathvisio
     custom.bridgedb
     custom.gpml2pvjson
