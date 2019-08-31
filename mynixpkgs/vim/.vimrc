@@ -120,9 +120,11 @@ let g:syntastic_mode_map = { 'mode': 'active',
 			\ 'passive_filetypes': [] }
 " Always stick any detected errors into the loclist:
 let g:syntastic_always_populate_loc_list=1
-let g:syntastic_auto_loc_list = 1
+let g:syntastic_auto_loc_list = 0
 let g:syntastic_check_on_open = 1
 let g:syntastic_check_on_wq = 0
+
+
 " Make tsuquyomi output display in syntastic gutter (disabled now bc it freezes vim for minutes)
 "let g:tsuquyomi_disable_quickfix = 1
 
@@ -186,43 +188,6 @@ let g:ctrlp_user_command = ['.git', 'cd %s && git ls-files -co --exclude-standar
 "
 " The following section is a wrapper to try handling
 " all filetypes with a unified API.
-
-" https://www.reddit.com/r/vim/comments/1a4yf1
-function! CleanNoNameEmptyBuffers()
-  let buffers = filter(range(1, bufnr('$')), 'buflisted(v:val) && empty(bufname(v:val)) && bufwinnr(v:val) < 0 && (getbufline(v:val, 1, "$") == [""])')
-  if !empty(buffers)
-    exe 'bd '.join(buffers, ' ')
-  else
-    echo 'No buffer deleted'
-  endif
-endfunction
-
-" Taken from
-" https://github.com/Asheq/close-buffers.vim/blob/master/plugin/close-buffers.vim
-function! s:DeleteBuffers(buffer_numbers, bang)
-  if !empty(a:buffer_numbers)
-    execute s:GetBufferDeleteCommand(a:bang) . ' ' . join(a:buffer_numbers)
-  endif
-endfunction
-
-function! s:GetBufferDeleteCommand(bang)
-  return 'bdelete' . (a:bang ? '!' : '')
-endfunction
-
-function s:getListedOrLoadedBuffers()
-  return filter(getbufinfo(), 'v:val.listed || v:val.loaded')
-endfunction
-
-function! s:CloseNamelessBuffers(bang)
-  let nameless_buffers = map(filter(s:getListedOrLoadedBuffers(), 'v:val.name == ""'), 'v:val.bufnr')
-  call s:DeleteBuffers(nameless_buffers, a:bang)
-endfunction
-
-" Using a kludge to prevent an additional location list /
-" buffer from displaying every time I save.
-" See this issue:
-" https://github.com/autozimu/LanguageClient-neovim/issues/861
-autocmd BufWritePost *.py call s:CloseNamelessBuffers(1)
 
 call LanguageClient#setDiagnosticsList("Quickfix")
 let g:LanguageClient_serverCommands = {
