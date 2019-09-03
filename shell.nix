@@ -5,6 +5,9 @@ in
   pkgs.mkShell {
     buildInputs = deps;
     shellHook = ''
-      #export PATH="$HOME/Documents/safer-npm:$PATH"
+      bash ./shell-hook.sh
+
+      # To open as a jupyter notebook:
+      # jupyter notebook --port=8888 --notebook-dir ./
     '';
 }
