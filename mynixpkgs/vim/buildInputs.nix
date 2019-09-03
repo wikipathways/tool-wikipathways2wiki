@@ -26,14 +26,14 @@ in [
   (pkgs.python3.withPackages (p: with p; [
     python-language-server
     rope
-    pyflakes
-    #flake8 # this is pyflakes + syntax checking
+    flake8 # this is pyflakes + syntax checking
     mccabe
     pycodestyle
     pydocstyle
     pylint
     pyls-isort
     pyls-mypy
+    custom.black
   ]))
 
   # sqlparse is on the command line as sqlformat.
