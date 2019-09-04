@@ -18,6 +18,7 @@ import pywikibot
 from pywikibot.data import sparql
 
 WPID_RE = re.compile(r"WP\d+")
+WPID_REV_RE = re.compile(r"(WP\d+)_(\d+)")
 LEADING_DOT_RE = re.compile(r"^\.")
 NON_ALPHANUMERIC_RE = re.compile(r"\W")
 LATEST_GPML_VERSION = "2013a"
@@ -179,6 +180,7 @@ SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
             bridgedb_keys = xref_result["head"]["vars"]
             for binding in xref_result["results"]["bindings"]:
                 for bridgedb_key in bridgedb_keys:
+                    # TODO: are any of the values lists, not strings?
                     wd_xref_identifier = binding[bridgedb_key]["value"].replace(
                         "http://www.wikidata.org/entity/", ""
                     )
@@ -192,36 +194,22 @@ SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
                 json.dump(pathway_data, f_out)
 
 
-def convert(path_in, path_out, pathway_id=None, pathway_version=0, scale=100):
+def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
     """Convert from GPML to another format like SVG.
 
     Keyword arguments:
     path_in -- path in, e.g., ./WP4542_103412.gpml
     path_out -- path out, e.g., ./WP4542_103412.svg
-    pathway_id -- e.g., WP4542
+    pathway_iri -- e.g., http://identifiers.org/wikipathways/WP4542
     pathway_version -- e.g., 103412
     scale -- scale to use when converting to PNG (default 100)"""
     if not path.exists(path_in):
         raise Exception(f"Missing file '{path_in}'")
 
-    pathway_iri = None
-    if not pathway_id:
-        pathway_id = path_in
-        pathway_iri = path_in
-    wp_id = None
-    wp_id_fullmatch = WPID_RE.fullmatch(pathway_id)
-    if wp_id_fullmatch:
-        wp_id = wp_id_fullmatch.group(0)
-    else:
-        wp_id_match = WPID_RE.search(pathway_id)
-        if wp_id_match:
-            wp_id = wp_id_match.group(0)
-    if not wp_id:
-        raise Exception(f"No WikiPathways ID found.")
-    else:
-        pathway_iri = f"http://identifiers.org/wikipathways/{wp_id}"
+    if path.exists(path_out):
+        print(f"File {path_out} already exists. Skipping.")
+        return True
 
-    # back to gpml2svg
     dir_in = path.dirname(path_in)
     base_in = path.basename(path_in)
     [stub_in, ext_in_with_dot] = path.splitext(base_in)
@@ -253,10 +241,6 @@ def convert(path_in, path_out, pathway_id=None, pathway_version=0, scale=100):
         old_f = f"{dir_in}/{stub_in}.{gpml_version}.gpml"
         rename(gpml_f, old_f)
         subprocess.run(shlex.split(f"pathvisio convert {old_f} {gpml_f}"))
-
-    if path.exists(path_out):
-        print(f"File {path_out} already exists. Skipping.")
-        return True
 
     # trying to get wd ids via sparql via pywikibot
     site = pywikibot.Site("wikidata", "wikidata")
@@ -679,8 +663,8 @@ def main():
     version = "0.0.0"
 
     parser = argparse.ArgumentParser(description="Convert GPML to SVG")
-    parser.add_argument("input")
-    parser.add_argument("output")
+    parser.add_argument("path_in")
+    parser.add_argument("path_out")
 
     group_version = parser.add_mutually_exclusive_group()
     group_version.add_argument(
@@ -689,9 +673,18 @@ def main():
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--pathway-id", type=str, help="WikiPathways ID, e.g., WP1243")
+    # In the future, this could change, e.g., maybe we'll starting using
+    # a Wikidata ID like Q66104607 or
+    # a WM Commons IRI.
+
     group.add_argument(
         "--pathway-version", type=str, help="WikiPathways revision (oldid), e.g., 69897"
     )
+    # In the future, this could change, e.g., maybe we'll start using
+    # a SHA256 hash of the GPML or
+    # a Wikidata revision or
+    # a WM Commons image edit date
+
     group.add_argument(
         "--scale",
         type=int,
@@ -703,11 +696,45 @@ def main():
     if args.version:
         print(version)
     else:
+        pathway_id = args.pathway_id
+        path_in = args.path_in
+        pathway_version = args.pathway_version
+
+        pathway_iri = None
+        wp_id = None
+
+        if pathway_id is None:
+            pathway_id = path_in
+
+        pathway_id_path_in = f"{pathway_id} {path_in}"
+        wp_id_rev_match = WPID_REV_RE.search(pathway_id_path_in)
+        if wp_id_rev_match:
+            wp_id = wp_id_rev_match.group(1)
+            if pathway_version is None:
+                pathway_version = wp_id_rev_match.group(2)
+            else:
+                pathway_version = 0
+        else:
+            wp_id_match = WPID_RE.search(pathway_id_path_in)
+            if wp_id_match:
+                wp_id = wp_id_match.group(0)
+
+        if wp_id is None:
+            raise Exception(
+                f"Specify a WikiPathways ID in pathway_id or path_in, e.g., '--pathway_id WP4542'"
+            )
+        else:
+            if pathway_id.startswith("http"):
+                pathway_iri = pathway_id
+            else:
+                pathway_iri = f"http://identifiers.org/wikipathways/{wp_id}"
+
         convert(
-            args.input,
-            args.output,
-            pathway_id=args.pathway_id,
-            pathway_version=args.pathway_version,
+            args.path_in,
+            args.path_out,
+            pathway_iri=pathway_iri,
+            wp_id=wp_id,
+            pathway_version=pathway_version,
             scale=args.scale,
         )
 
