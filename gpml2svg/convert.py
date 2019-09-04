@@ -15,11 +15,9 @@ import subprocess
 from os import path, rename
 import requests
 import pywikibot
-
 from pywikibot.data import sparql
 
-WPID_EXACT_RE = re.compile(r"^(WP\d+)$")
-WPID_CONTAINED_RE = re.compile(r"^(WP\d+)$")
+WPID_RE = re.compile(r"WP\d+")
 LEADING_DOT_RE = re.compile(r"^\.")
 NON_ALPHANUMERIC_RE = re.compile(r"\W")
 LATEST_GPML_VERSION = "2013a"
@@ -29,37 +27,47 @@ LATEST_GPML_VERSION = "2013a"
 # let g:LanguageClient_selectionUI_autoOpen=0
 # call LanguageClient#binaryPath()
 
-bridgedb2wd_props_request = requests.get(
-    "https://raw.githubusercontent.com/bridgedb/BridgeDb/master/org.bridgedb.bio/resources/org/bridgedb/bio/datasources.tsv"
+BRIDGEDB_REPO_BASE = "https://raw.githubusercontent.com/bridgedb/BridgeDb/master"
+BRIDGEDB2WD_PROPS_REQUEST = requests.get(
+    BRIDGEDB_REPO_BASE + "/org.bridgedb.bio/resources/org/bridgedb/bio/datasources.tsv"
 )
 BRIDGEDB2WD_PROPS = dict()
-for row in csv.DictReader(
-        bridgedb2wd_props_request.text.splitlines(), delim="\t"):
+for row in csv.DictReader(BRIDGEDB2WD_PROPS_REQUEST.text.splitlines(), delimiter="\t"):
     BRIDGEDB2WD_PROPS[row["datasource_name"]] = row["wikidata_property"]
 
 
-def convert(path_in, path_out, pathway_id, pathway_version, scale=100):
+def convert(path_in, path_out, pathway_id=None, pathway_version=0, scale=100):
+    """Convert from GPML to another format like SVG.
+
+    Keyword arguments:
+    path_in -- path in, e.g., ./WP4542_103412.gpml
+    path_out -- path out, e.g., ./WP4542_103412.svg
+    pathway_id -- e.g., WP4542
+    pathway_version -- e.g., 103412
+    scale -- scale to use when converting to PNG (default 100)"""
     if not path.exists(path_in):
         raise Exception(f"Missing file '{path_in}'")
+
+    if not pathway_id:
+        pathway_id = path_in
+    wp_id = None
+    wp_id_fullmatch = WPID_RE.fullmatch(pathway_id)
+    if wp_id_fullmatch:
+        wp_id = wp_id_fullmatch.group(0)
+        pathway_id = f"http://identifiers.org/wikipathways/{wp_id}"
+    else:
+        wp_id_match = WPID_RE.search(pathway_id)
+        if wp_id_match:
+            wp_id = wp_id_match.group(0)
+    if not wp_id:
+        raise Exception(f"No WikiPathways ID found.")
 
     # back to gpml2svg
     dir_in = path.dirname(path_in)
     base_in = path.basename(path_in)
     [stub_in, ext_in_with_dot] = path.splitext(base_in)
     # get rid of the leading dot
-    ext_in = LEADING_DOT_RE.sub("", ext_in_with_dot)
-
-    if (not pathway_id) or (not pathway_version):
-        basename_parts = stub_in.split("_")
-        wp_id = basename_parts[0]
-        pathway_version_candidate = (
-            int(basename_parts[1]) if len(basename_parts) == 2 else None
-        )
-        if wp_id and pathway_version_candidate:
-            if not pathway_id:
-                pathway_id = f"http://identifiers.org/wikipathways/{wp_id}"
-            if not pathway_version:
-                pathway_version = pathway_version_candidate
+    # ext_in = LEADING_DOT_RE.sub("", ext_in_with_dot)
 
     dir_out = path.dirname(path_out)
     base_out = path.basename(path_out)
@@ -79,38 +87,48 @@ def convert(path_in, path_out, pathway_id, pathway_version, scale=100):
 
     if not root:
         raise Exception("no root element")
-    elif not root.tag:
+    if not root.tag:
         raise Exception("no root tag")
-    else:
-        gpml_version = re.sub(
-            r"{http://pathvisio.org/GPML/(\w+)}Pathway", r"\1", root.tag
-        )
-        if gpml_version != LATEST_GPML_VERSION:
-            old_f = f"{dir_in}/{stub_in}.{gpml_version}.gpml"
-            rename(gpml_f, old_f)
-            subprocess.run(shlex.split(f"pathvisio convert {old_f} {gpml_f}"))
+
+    gpml_version = re.sub(r"{http://pathvisio.org/GPML/(\w+)}Pathway", r"\1", root.tag)
+    if gpml_version != LATEST_GPML_VERSION:
+        old_f = f"{dir_in}/{stub_in}.{gpml_version}.gpml"
+        rename(gpml_f, old_f)
+        subprocess.run(shlex.split(f"pathvisio convert {old_f} {gpml_f}"))
 
     if path.exists(path_out):
         print(f"File {path_out} already exists. Skipping.")
         return True
 
+    # trying to get wd ids via sparql via pywikibot
+    site = pywikibot.Site("wikidata", "wikidata")
+    repo = site.data_repository()  # this is a DataSite object
+    wd_sparql = sparql.SparqlQuery(
+        endpoint="https://query.wikidata.org/sparql", repo=repo
+    )
+    # (self, endpoint=None, entity_url=None, repo=None, 2 max_retries=None, retry_wait=None)
+
     if ext_out in ["gpml", "owl", "pdf", "pwf", "txt"]:
         subprocess.run(shlex.split(f"pathvisio convert {path_in} {path_out}"))
     elif ext_out == "png":
-        # TODO: look at using --scale as an option (instead of an argument), for both pathvisio and gpmlconverter.
-        # TODO: move the setting of a default value for scale into pathvisio instead of here.
+        # TODO: look at using --scale as an option (instead of an argument),
+        #       for both pathvisio and gpmlconverter.
+        # TODO: move the setting of a default value for scale into
+        # pathvisio instead of here.
         subprocess.run(shlex.split(f"pathvisio convert {path_in} {path_out} {scale}"))
         # Use interlacing? See https://github.com/PathVisio/pathvisio/issues/78
-        # It's probably not worthwhile. If we did it, we would need to install imagemagick and then run this:
-        # mv "$path_out" "$path_out.noninterlaced.png"
-        # convert -interlace PNG "$path_out.noninterlaced.png" "$path_out"
+        # It's probably not worthwhile. If we did it, we would need to install
+        # imagemagick and then run this:
+        #     mv "$path_out" "$path_out.noninterlaced.png"
+        #     convert -interlace PNG "$path_out.noninterlaced.png" "$path_out"
     elif ext_out in ["json", "jsonld"]:
         organism = root.attrib.get("Organism")
-        # TODO: bridgedbjs fails when no xrefs are present. Update bridgedbjs to do this check:
+        # TODO: bridgedbjs fails when no xrefs are present.
+        # Update bridgedbjs to do this check:
         xref_identifiers = root.findall("./gpml:DataNode/gpml:Xref[@ID]", ns)
-        # bridgedbjs also fails when an identifier is something like 'undefined'.
-        # Should it ignore datasources/identifiers it doesn't recognize and just
-        # keep going?
+        # bridgedbjs also fails when an identifier is something like
+        # 'undefined'. Should it ignore datasources/identifiers it doesn't
+        # recognize and just keep going?
 
         gpml2pvjson_cmd = (
             f"gpml2pvjson --id {pathway_id} --pathway-version {pathway_version}"
@@ -125,87 +143,113 @@ def convert(path_in, path_out, pathway_id, pathway_version, scale=100):
         if (not organism) or (not xref_identifiers):
             print("No xrefs to process.")
         else:
-            rename(path_out, f"{path_out}.b4bridgedb.json")
+            pre_bridgedb_json_f = f"{dir_out}/{stub_out}.pre_bridgedb.json"
+            rename(path_out, pre_bridgedb_json_f)
 
             bridgedb_cmd = f"""bridgedb xrefs -f json \
-                -i '.entitiesById[].type' "{organism}" '.entitiesById[].xrefDataSource' '.entitiesById[].xrefIdentifier' \
+                -i '.entitiesById[].type' "{organism}" \
+                '.entitiesById[].xrefDataSource' \
+                '.entitiesById[].xrefIdentifier' \
                 ChEBI P683 Ensembl P594 "Entrez Gene" P351 HGNC P353 HMDB P2057 Wikidata
             """
-            with open(f"{path_out}.b4bridgedb.json", "r") as f_in:
+            with open(pre_bridgedb_json_f, "r") as f_in:
                 with open(path_out, "w") as f_out:
                     bridgedb_ps = subprocess.Popen(
                         shlex.split(bridgedb_cmd), stdin=f_in, stdout=f_out, shell=False
                     )
                     bridgedb_ps.communicate()[0]
 
-            no_wikidata_entities = list()
-            with open(f"{path_out}.json", "r") as f:
-                pathway_data = json.load(f)
-                entities_by_id = pathway_data["entitiesByID"]
-                for entity in entities_by_id:
-                    if "xrefIdentifier" in entity
-                    and "xrefDataSource" in entity
-                    and entity["xrefDataSource"] in BRIDGEDB2WD_PROPS:
-                        print(entity)
+            no_wikidata_xrefs_by_bridgedb_key = dict()
+            entity_ids_by_bridgedb_key = dict()
+            with open(path_out, "r") as json_f:
+                pathway_data = json.load(json_f)
+                entities_by_id = pathway_data["entitiesById"]
+                for entity in entities_by_id.values():
+                    if (
+                        "xrefIdentifier" in entity
+                        and "xrefDataSource" in entity
+                        and entity["xrefDataSource"] in BRIDGEDB2WD_PROPS
+                        and len(
+                            [
+                                entity_type
+                                for entity_type in entity["type"]
+                                if entity_type.startswith("Wikidata:")
+                            ]
+                        )
+                        == 0
+                    ):
+                        entity_id = entity["id"]
+                        datasource = entity["xrefDataSource"]
+                        xref_identifier = entity["xrefIdentifier"]
+                        bridgedb_key = NON_ALPHANUMERIC_RE.sub(
+                            "", datasource + xref_identifier
+                        )
+                        no_wikidata_xrefs_by_bridgedb_key[bridgedb_key] = [
+                            datasource,
+                            xref_identifier,
+                        ]
+                        if bridgedb_key not in entity_ids_by_bridgedb_key:
+                            entity_ids_by_bridgedb_key[bridgedb_key] = [entity_id]
+                        else:
+                            entity_ids_by_bridgedb_key[bridgedb_key].append(entity_id)
 
-            # Add Wikidata ids
-            # TODO rewrite JavaScript file ./other/js/add_wd_ids as a Python script
-            # will require using a Python Wikidata client library.
-            add_wd_ids_cmd = f"add_wd_ids {path_out}"
-            print(add_wd_ids_cmd)
-            # subprocess.run(shlex.split(add_wd_ids_cmd))
+                # Add Wikidata ids
+                # TODO rewrite JavaScript file ./other/js/add_wd_ids as a Python script
+                # will require using a Python Wikidata client library.
+                # add_wd_ids_cmd = f"add_wd_ids {path_out}"
+                # subprocess.run(shlex.split(add_wd_ids_cmd))
 
-            # trying to get wd ids via sparql via pywikibot
-            site = pywikibot.Site("wikidata", "wikidata")
-            repo = site.data_repository()  # this is a DataSite object
-            myquery = sparql.SparqlQuery(
-                endpoint="https://query.wikidata.org/sparql", repo=repo
-            )
-            # (self, endpoint=None, entity_url=None, repo=None, 2 max_retries=None, retry_wait=None)
-            myresult = myquery.query(
-                '''
+                wd_pathway_id_result = wd_sparql.query(
+                    '''
 SELECT ?item WHERE {
-    ?item wdt:P2410 "''' + wp_id + """" .
+    ?item wdt:P2410 "'''
+                    + wp_id
+                    + """" .
     SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
 }"""
-            )
-            # print(myresult)
+                )
 
-            qurl = myresult["results"]["bindings"][0]["item"]["value"]
-            print(f"qurl: {qurl}")
+                qurl = wd_pathway_id_result["results"]["bindings"][0]["item"]["value"]
+                print(f"qurl: {qurl}")
 
-            # TODO: get xrefs from JSON.
-            # convert datasource to a wikidata property
-            # query wikidata via sparql to get qurls
+                # TODO: get xrefs from JSON.
+                # convert datasource to a wikidata property
+                # query wikidata via sparql to get qurls
 
-            bridgedb2wd_props = dict()
-            bridgedb2wd_props["Ensembl"] = "P594"
-            bridgedb2wd_props["Entrez Gene"] = "P351"
-            xrefs = [["Ensembl", "ENSG00000151748"], ["Entrez Gene", "6788"]]
-            headings = []
-            queries = []
-            for i, xref in enumerate(xrefs):
-                [datasource, ID] = xref
-                heading = "?" + NON_ALPHANUMERIC_RE.sub("", datasource + ID)
-                headings.append(heading)
-                wd_prop = bridgedb2wd_props[datasource]
-                queries.append(f'{heading} wdt:{wd_prop} "{ID}" .')
-            headings_str = " ".join(headings)
-            queries_str = (
-                "WHERE { " +
-                + " ".join(queries)
-                + ' SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }}'
-            )
-            xref_query = f"SELECT {headings_str} {queries_str}"
-            xref_result = myquery.query(xref_query)
-
-            bridgedb_keys = xref_result["head"]["vars"]
-            for binding in xref_result["results"]["bindings"]:
-                for bridgedb_key in bridgedb_keys:
-                    value = binding[bridgedb_key]["value"].replace(
-                        "http://www.wikidata.org/entity/", ""
+                headings = []
+                queries = []
+                for i, xref in enumerate(no_wikidata_xrefs_by_bridgedb_key.values()):
+                    [datasource, xref_identifier] = xref
+                    heading = "?" + NON_ALPHANUMERIC_RE.sub(
+                        "", datasource + xref_identifier
                     )
-                    print(f"{bridgedb_key}: {value}")
+                    headings.append(heading)
+                    wd_prop = BRIDGEDB2WD_PROPS[datasource]
+                    queries.append(f'{heading} wdt:{wd_prop} "{xref_identifier}" .')
+                headings_str = " ".join(headings)
+                queries_str = (
+                    "WHERE { "
+                    + " ".join(queries)
+                    + ' SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }}'
+                )
+                xref_query = f"SELECT {headings_str} {queries_str}"
+                xref_result = wd_sparql.query(xref_query)
+
+                bridgedb_keys = xref_result["head"]["vars"]
+                for binding in xref_result["results"]["bindings"]:
+                    for bridgedb_key in bridgedb_keys:
+                        wd_xref_identifier = binding[bridgedb_key]["value"].replace(
+                            "http://www.wikidata.org/entity/", ""
+                        )
+                        for entity_id in entity_ids_by_bridgedb_key[bridgedb_key]:
+                            entities_by_id[entity_id]["type"].append(
+                                f"Wikidata:{wd_xref_identifier}"
+                            )
+                            print(entities_by_id[entity_id])
+                pre_wd_json_f = f"{dir_out}/{stub_out}.pre_wd.json"
+                rename(path_out, pre_wd_json_f)
+                with open(path_out, "w") as f_out:
+                    json.dump(pathway_data, f_out)
 
 
 # TODO convert the following sh script to Python
@@ -594,7 +638,9 @@ exit 0
 
 
 def main():
-    VERSION = "0.0.0"
+    """main."""
+
+    version = "0.0.0"
 
     parser = argparse.ArgumentParser(description="Convert GPML to SVG")
     parser.add_argument("input")
@@ -619,7 +665,7 @@ def main():
     args = parser.parse_args()
 
     if args.version:
-        print(VERSION)
+        print(version)
     else:
         convert(
             args.input,
