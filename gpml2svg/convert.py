@@ -33,16 +33,7 @@ for row in csv.DictReader(BRIDGEDB2WD_PROPS_REQUEST.text.splitlines(), delimiter
 
 
 def convert2json(
-    path_in,
-    path_out,
-    pathway_iri,
-    wp_id,
-    pathway_version,
-    root,
-    ns,
-    dir_out,
-    stub_out,
-    wd_sparql,
+    path_in, path_out, pathway_iri, wp_id, pathway_version, dir_out, stub_out, wd_sparql
 ):
     """Convert from GPML to JSON.
 
@@ -52,19 +43,10 @@ def convert2json(
     pathway_iri -- e.g., http://identifiers.org/wikipathways/WP4542
     wp_id -- e.g., WP4542
     pathway_version -- e.g., 103412
-    root -- parsed GPML
-    ns -- namespaces used when parsing GPML
     dir_out -- directory out
     stub_out -- filename w/out extension
     wd_sparql -- wikidata object for making queries
     """
-    organism = root.attrib.get("Organism")
-    # TODO: bridgedbjs fails when no xrefs are present.
-    # Update bridgedbjs to do this check:
-    xref_identifiers = root.findall("./gpml:DataNode/gpml:Xref[@ID]", ns)
-    # bridgedbjs also fails when an identifier is something like
-    # 'undefined'. Should it ignore datasources/identifiers it doesn't
-    # recognize and just keep going?
 
     gpml2pvjson_cmd = (
         f"gpml2pvjson --id {pathway_iri} --pathway-version {pathway_version}"
@@ -76,7 +58,42 @@ def convert2json(
             )
             gpml2pvjson_ps.communicate()[0]
 
-    if (not organism) or (not xref_identifiers):
+    organism = None
+    with open(path_out, "r") as json_f:
+        pathway_data = json.load(json_f)
+        pathway = pathway_data["pathway"]
+        organism = pathway["organism"]
+        entities_by_id = pathway_data["entitiesById"]
+        entities_with_valid_xrefs = list()
+        for entity in entities_by_id.values():
+            datasource_invalid = "xrefDataSource" in entity and (
+                entity["xrefDataSource"] in ["undefined"]
+                or not entity["xrefDataSource"]
+            )
+            xref_identifier_invalid = "xrefIdentifier" in entity and (
+                entity["xrefIdentifier"] in ["undefined"]
+                or not entity["xrefIdentifier"]
+            )
+            if datasource_invalid or xref_identifier_invalid:
+                entity_id = entity["id"]
+                print(
+                    f"Invalid xref datasource and/or identifier for {wp_id}, entity {entity_id}"
+                )
+                # bridgedbjs fails when an identifier is something like 'undefined'.
+                # Should it ignore datasources/identifiers it doesn't recognize
+                # and just keep going?
+                del entity["xrefDataSource"]
+                del entity["xrefIdentifier"]
+            else:
+                entities_with_valid_xrefs.append(entity)
+        with open(path_out, "w") as f_out:
+            json.dump(pathway_data, f_out)
+
+    if not organism:
+        print("No organism. Can't call BridgeDb.")
+    elif len(entities_with_valid_xrefs) == 0:
+        # TODO: bridgedbjs fails when no xrefs are present.
+        # Update bridgedbjs to do this check:
         print("No xrefs to process.")
     else:
         pre_bridgedb_json_f = f"{dir_out}/{stub_out}.pre_bridgedb.json"
@@ -128,12 +145,6 @@ def convert2json(
                         entity_ids_by_bridgedb_key[bridgedb_key] = [entity_id]
                     else:
                         entity_ids_by_bridgedb_key[bridgedb_key].append(entity_id)
-
-            # Add Wikidata ids
-            # TODO rewrite JavaScript file ./other/js/add_wd_ids as a Python script
-            # will require using a Python Wikidata client library.
-            # add_wd_ids_cmd = f"add_wd_ids {path_out}"
-            # subprocess.run(shlex.split(add_wd_ids_cmd))
 
             wd_pathway_id_result = wd_sparql.query(
                 '''
@@ -212,19 +223,25 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
 
     dir_in = path.dirname(path_in)
     base_in = path.basename(path_in)
+    # base_in example: 'WP4542.gpml'
     [stub_in, ext_in_with_dot] = path.splitext(base_in)
-    # get rid of the leading dot
-    # ext_in = LEADING_DOT_RE.sub("", ext_in_with_dot)
+    # get rid of the leading dot, e.g., '.gpml' to 'gpml'
+    ext_in = LEADING_DOT_RE.sub("", ext_in_with_dot)
+
+    if ext_in != "gpml":
+        # TODO: how about *.gpml.xml?
+        raise Exception(f"Currently only accepting *.gpml for path_in")
+    # gpml_f = f"{dir_in}/{stub_in}.gpml"
+    gpml_f = path_in
 
     dir_out = path.dirname(path_out)
+    # base_out example: 'WP4542.svg'
     base_out = path.basename(path_out)
     [stub_out, ext_out_with_dot] = path.splitext(base_out)
-    # get rid of the leading dot
+    # get rid of the leading dot, e.g., '.svg' to 'svg'
     ext_out = LEADING_DOT_RE.sub("", ext_out_with_dot)
 
-    gpml_f = f"{dir_in}/{stub_in}.gpml"
-
-    ns = {"gpml": "http://pathvisio.org/GPML/2013a"}
+    # ns = {"gpml": "http://pathvisio.org/GPML/2013a"}
 
     ET.register_namespace("", "http://pathvisio.org/GPML/2013a")
 
@@ -237,10 +254,11 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
         raise Exception("no root tag")
 
     gpml_version = re.sub(r"{http://pathvisio.org/GPML/(\w+)}Pathway", r"\1", root.tag)
-    if gpml_version != LATEST_GPML_VERSION:
+    if ext_out != "gpml" and gpml_version != LATEST_GPML_VERSION:
         old_f = f"{dir_in}/{stub_in}.{gpml_version}.gpml"
         rename(gpml_f, old_f)
-        subprocess.run(shlex.split(f"pathvisio convert {old_f} {gpml_f}"))
+        convert(old_f, gpml_f, pathway_iri, wp_id, pathway_version, scale)
+        # subprocess.run(shlex.split(f"pathvisio convert {old_f} {gpml_f}"))
 
     # trying to get wd ids via sparql via pywikibot
     site = pywikibot.Site("wikidata", "wikidata")
@@ -270,8 +288,6 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
             pathway_iri,
             wp_id,
             pathway_version,
-            root,
-            ns,
             dir_out,
             stub_out,
             wd_sparql,
