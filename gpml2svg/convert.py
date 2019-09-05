@@ -4,10 +4,11 @@
 # python3 gpml2svg/convert.py ~/Documents/WP4542/WP4542_103412.gpml ./WP4542_103412.json
 # python3 gpml2svg/convert.py ~/Documents/WP4542/WP4542_103412.gpml ./WP4542_103412.svg
 
-import xml.etree.ElementTree as ET
+# import xml.etree.ElementTree as ET
 import argparse
 import csv
 import json
+from lxml import etree as ET
 import re
 import shlex
 import subprocess
@@ -17,9 +18,13 @@ import requests
 import pywikibot
 from pywikibot.data import sparql
 
+
+parser = ET.XMLParser(strip_cdata=False)
+
 WPID_RE = re.compile(r"WP\d+")
-WPID_REV_RE = re.compile(r"(WP\d+)_(\d+)")
+WPID_REV_RE = re.compile(r"(WP\d+)_r?(\d+)")
 LEADING_DOT_RE = re.compile(r"^\.")
+BARE_BASE_RE = re.compile(r"(.+)\.*")
 NON_ALPHANUMERIC_RE = re.compile(r"\W")
 LATEST_GPML_VERSION = "2013a"
 
@@ -242,15 +247,14 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
     ext_out = LEADING_DOT_RE.sub("", ext_out_with_dot)
 
     # ns = {"gpml": "http://pathvisio.org/GPML/2013a"}
+    # ET.register_namespace(None, ns["gpml"])
 
-    ET.register_namespace("", "http://pathvisio.org/GPML/2013a")
-
-    tree = ET.parse(gpml_f)
+    tree = ET.parse(gpml_f, parser=parser)
     root = tree.getroot()
 
-    if not root:
+    if root is None:
         raise Exception("no root element")
-    if not root.tag:
+    if root.tag is None:
         raise Exception("no root tag")
 
     gpml_version = re.sub(r"{http://pathvisio.org/GPML/(\w+)}Pathway", r"\1", root.tag)
@@ -296,17 +300,59 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
         #############################
         # SVG
         #############################
+        stub_out_components = stub_out.split(".")
+        bare_stub_out = stub_out_components.pop()
+        extra_exts_out = stub_out_components
+        theme = "plain"
+        #        # For now, assume no inputs specify plain or dark
+        #        if len(extra_exts_out) > 0:
+        #            theme = extra_exts_out[0]
+        json_f = f"{dir_out}/{bare_stub_out}.json"
+        convert2json(
+            path_in,
+            json_f,
+            pathway_iri,
+            wp_id,
+            pathway_version,
+            dir_out,
+            stub_out,
+            wd_sparql,
+        )
+
+        #        pvjs_cmd = (
+        #            f"pvjs < {json_f} > {path_out}"
+        #        )
+        pvjs_cmd = "pvjs"
+        with open(json_f, "r") as f_in:
+            with open(path_out, "w") as f_out:
+                pvjs_ps = subprocess.Popen(
+                    shlex.split(pvjs_cmd), stdin=f_in, stdout=f_out, shell=False
+                )
+                pvjs_ps.communicate()[0]
+
+        #        ns = {
+        #            "svg": "http://www.w3.org/2000/svg",
+        #            "xmlns:xlink": "http://www.w3.org/1999/xlink",
+        #        }
+        #
+        # ET.register_namespace(None, ns["svg"])
+
+        #        with open(path_out, "r") as svg_f:
+        #            print(svg_f)
+        tree = ET.parse(path_out, parser=parser)
+        root = tree.getroot()
+
+        # WM says: "the recommended image height is around 400–600 pixels. When a
+        #           user views the full size image, a width of 600–800 pixels gives
+        #           them a good close-up view"
+        # https://commons.wikimedia.org/wiki/Help:SVG#Frequently_asked_questions
+        root.set("width", "800px")
+        root.set("height", "600px")
+
+        tree.write(path_out)
+
         # TODO convert the following sh script to Python
         """
-          bare_stub_out="${base_out%%.*}"
-        #  # For now, assume no inputs specify plain or dark
-        #  all_exts_out="${base_out#*.}"
-        #  second_ext_out="${all_exts_out%.*}"
-        #  third_extension_out="${second_ext_out%.*}"
-
-          json_f="$dir_out/$bare_stub_out.json"
-          "$SCRIPT_DIR/gpmlconverter" --id "$pathway_id" --pathway-version "$PATHWAY_VERSION" "$path_in" "$json_f"
-
           metabolite_patterns_css_f="$dir_out/$bare_stub_out.metabolite-patterns-uri.css"
           metabolite_patterns_svg_f="$dir_out/$bare_stub_out.metabolite-patterns-uri.svg"
           "$SCRIPT_DIR/metabolite-patterns-uri" "$json_f"

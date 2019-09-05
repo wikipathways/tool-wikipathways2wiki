@@ -18,6 +18,7 @@ in
       p.requests
       p.ipython
       p.jupyter
+      p.lxml
       p.matplotlib
       custom.pywikibot
     ]))
