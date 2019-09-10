@@ -1,12 +1,6 @@
 with import <nixpkgs> { config.allowUnfree = true; };
 
 let
-#  nodePackages_6_x = callPackage ./development/node-packages/default-v6.nix {
-#    nodejs = pkgs.nodejs-6_x;
-#  };
-#  nodePackages_8_x = callPackage ./development/node-packages/default-v8.nix {
-#    nodejs = pkgs.nodejs-8_x;
-#  };
   python3Packages = import ./development/python-modules/python-packages.nix;
   nodePackages_10_x = callPackage ./development/node-packages/default-v10.nix {
     nodejs = pkgs.nodejs-10_x;
@@ -18,9 +12,7 @@ in
   nodePackages = nodePackages;
   depcheck = nodePackages.depcheck;
   gpml2pvjson = nodePackages.gpml2pvjson;
-  # TODO: fix this. It doesn't build as node 8 for some reason.
-  #bridgedb = nodePackages_6_x.bridgedb;
-  bridgedb = nodePackages_10_x.bridgedb;
+  bridgedb = nodePackages.bridgedb;
   pvjs = nodePackages."@wikipathways/pvjs";
 
   bash-it = callPackage ./bash-it/default.nix {}; 
