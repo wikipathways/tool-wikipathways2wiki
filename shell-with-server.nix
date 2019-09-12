@@ -3,13 +3,12 @@ with pkgs.lib.strings;
 let
   deps = import ./deps.nix;
   shellHookBase = fileContents ./shell-hook-base.sh;
+  startServer = fileContents ./start-server.sh;
 in
   pkgs.mkShell {
-    buildInputs = deps ++ [ pkgs.python3Packages.pycodestyle pkgs.python3Packages.rope ];
+    buildInputs = deps ++ [ pkgs.ps ];
     shellHook = concatStringsSep "\n" [
       shellHookBase
-      ''
-        # anything else?
-      ''
+      startServer
     ];
 }
