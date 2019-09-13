@@ -1,1 +1,1 @@
-["depcheck", "typescript", "bridgedb", "gpml2pvjson", "@wikipathways/pvjs"]
+["depcheck", "typescript", "bridgedb", "gpml2pvjson", "@wikipathways/pvjs", "svgo"]

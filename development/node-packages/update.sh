@@ -32,18 +32,7 @@ cd "$SCRIPT_DIR";
 
 rm -f node-env.nix;
 
-node2nix -6 -i node-packages-v6.json -o node-packages-v6.nix -c composition-v6.nix
-node2nix -8 -i node-packages-v8.json -o node-packages-v8.nix -c composition-v8.nix
 node2nix --nodejs-10 -i node-packages-v10.json -o node-packages-v10.nix -c composition-v10.nix
+node2nix --nodejs-12 -i node-packages-v12.json -o node-packages-v12.nix -c composition-v12.nix
 
 # TODO: look at whether to use a lock file somehow.
-#rm -f default.nix node-packages.nix node-env.nix;
-#jq '[.dependencies | to_entries | .[] | {(.key): .value}]' package.json > node-packages.json 
-#npm shrinkwrap
-#cp npm-shrinkwrap.json package-lock.json
-#node2nix -6 -i "$SCRIPT_DIR/node-packages.json" -l "$SCRIPT_DIR/npm-shrinkwrap.json"
-#nix-env -f default.nix -i
-
-# TODO: why isn't bridgedb installing with version 8?
-#node2nix -8 --bypass-cache -i "$SCRIPT_DIR/node-packages.json"
-#node2nix -6 -i "$SCRIPT_DIR/node-packages.json"
