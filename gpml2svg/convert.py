@@ -19,6 +19,7 @@ import pywikibot
 from pywikibot.data import sparql
 
 
+SVG_NS = {"svg": "http://www.w3.org/2000/svg"}
 parser = ET.XMLParser(strip_cdata=False)
 
 WPID_RE = re.compile(r"WP\d+")
@@ -319,9 +320,6 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
             wd_sparql,
         )
 
-        #        pvjs_cmd = (
-        #            f"pvjs < {json_f} > {path_out}"
-        #        )
         pvjs_cmd = "pvjs"
         with open(json_f, "r") as f_in:
             with open(path_out, "w") as f_out:
@@ -330,17 +328,19 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
                 )
                 pvjs_ps.communicate()[0]
 
-        #        ns = {
-        #            "svg": "http://www.w3.org/2000/svg",
-        #            "xmlns:xlink": "http://www.w3.org/1999/xlink",
-        #        }
-        #
-        # ET.register_namespace(None, ns["svg"])
-
-        #        with open(path_out, "r") as svg_f:
-        #            print(svg_f)
         tree = ET.parse(path_out, parser=parser)
         root = tree.getroot()
+
+        #############################
+        # SVG > .svg
+        #############################
+
+        # TODO: make the stand-alone SVGs work for upload to WM Commons:
+        # https://www.mediawiki.org/wiki/Manual:Coding_conventions/SVG
+        # https://commons.wikimedia.org/wiki/Help:SVG
+        # https://commons.wikimedia.org/wiki/Commons:Commons_SVG_Checker?withJS=MediaWiki:CommonsSvgChecker.js
+        # The W3 validator might be outdated. It doesn't allow for RDFa attributes.
+        # http://validator.w3.org/#validate_by_upload+with_options
 
         # WM says: "the recommended image height is around 400–600 pixels. When a
         #           user views the full size image, a width of 600–800 pixels gives
@@ -349,372 +349,433 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
         root.set("width", "800px")
         root.set("height", "600px")
 
+        for style_el in root.findall(".//style"):
+            print("style_el")
+            print(style_el)
+            if not style_el.text == "":
+                raise Exception("Expected empty style sheets.")
+        for el in root.findall(".//pattern[@id='PatternQ47512']"):
+            raise Exception("Unexpected pattern.")
+
+        for el in root.xpath(
+            "/svg:svg/svg:g/svg:g[contains(@class,'Edge')]/svg:g", namespaces=SVG_NS
+        ):
+            raise Exception("Unexpected nested g element for edge.")
+        for el in root.xpath(
+            "/svg:svg/svg:g/svg:g[contains(@class,'Edge')]/svg:path/@style",
+            namespaces=SVG_NS,
+        ):
+            raise Exception(
+                "Unexpected style attribute on path element for edge.",
+                namespaces=SVG_NS,
+            )
+        for el in root.xpath(
+            "/svg:svg/svg:defs/svg:g[@id='jic-defs']/svg:svg/svg:defs",
+            namespaces=SVG_NS,
+        ):
+            raise Exception("Unexpected nested svg for defs.")
+
+        for el in root.findall(".//g/g[contains(@class,'Edge')]/g"):
+            raise Exception("Unexpected nested g element for edge.")
+        for el in root.findall(".//g/g[contains(@class,'Edge')]/path/@style"):
+            raise Exception("Unexpected style attribute on path element for edge.")
+        for el in root.findall(".//defs/g[@id='jic-defs']/svg/defs"):
+            raise Exception("Unexpected nested svg for defs.")
+
+        # TODO: do the attributes "filter" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"
+        # on the top-level g element apply to the g elements for edges?
+
+        # TODO: do the attributes "color" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"
+        # on the top-level g element apply to the path elements for edges?
+
+        # TODO: Which of the following is correct?
+        # To make the SVG file independent of Arial, change all occurrences of
+        #   font-family: Arial to font-family: 'Liberation Sans', Arial, sans-serif
+        #   https://commons.wikimedia.org/wiki/Help:SVG#fallback
+        # vs.
+        # Phab:T64987, Phab:T184369, Gnome #95; font-family="'font name'"
+        #   (internally quoted font family name) does not work
+        #   (File:Mathematical_implication_diagram-alt.svg, File:T184369.svg)
+        #   https://commons.wikimedia.org/wiki/Commons:Commons_SVG_Checker?withJS=MediaWiki:CommonsSvgChecker.js
+
+        # The kerning for Liberation Sans has some issues, at least when run through librsvg.
+        # Liberation Sans is the open replacement for Arial, but DejaVu Sans with transform="scale(0.92,0.98)"
+        # might have better kerning while taking up about the same amount of space.
+
+        # Long-term, should we switch our default font from Arial to something prettier?
+        # It would have to be a well-supported font.
+        # This page <https://commons.wikimedia.org/wiki/Help:SVG#fallback> says:
+        #     On Commons, librsvg has the fonts listed in:
+        #     https://meta.wikimedia.org/wiki/SVG_fonts#Latin_(basic)_fonts_comparison
+        #     ...
+        #     In graphic illustrations metric exact text elements are often important
+        #     and Arial can be seen as de-facto standard for such a feature.
+
         tree.write(path_out)
 
         # TODO convert the following sh script to Python
         """
-          metabolite_patterns_css_f="$dir_out/$bare_stub_out.metabolite-patterns-uri.css"
-          metabolite_patterns_svg_f="$dir_out/$bare_stub_out.metabolite-patterns-uri.svg"
-          "$SCRIPT_DIR/metabolite-patterns-uri" "$json_f"
-
-          if [[ "$base_out" =~ (pvjssvg)$ ]]; then
-            #############################
-            # SVG > .pvjssvg
-            #############################
-            pvjs --react --theme "plain" < "$json_f" | xmlstarlet fo | tail -n +2 > "$path_out"
-            # TODO: I should be able to use "xmlstarlet fo -o" instead of "tail -n +2"
-            # to omit the xml declaration <?xml version="1.0"?>, but "xmlstarlet fo -o"
-            # is giving an error. Strangely, "xmlstarlet fo" does not error.
-            #pvjs --react --theme "plain" < "$json_f" | xmlstarlet fo -o > "$path_out"
-
-            fix_pvjs_bugs "$path_out"
-
-        #    sed -i '/<style.*>/{
-        #r '"$metabolite_patterns_css_f"'
-        #}' "$path_out"
-
-            sed -i '/<g id="jic-defs">/{
-        r /dev/stdin
-        }' "$path_out" < <(xmlstarlet sel -t -c '/svg/defs/*' "$metabolite_patterns_svg_f")
-
-            # We overwrite the stylesheet, getting rid of the hover effects
-            # for metabolites, but that's desired for now.
-            # We have the patterns in case we want to do anything with
-            # them later on, but we don't have the busy hover effects.
-            xmlstarlet ed -L -O -N svg='http://www.w3.org/2000/svg' \
-                    -u "/svg:svg/svg:style/text()" \
-                    -v "
-        " \
+        xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
+                -u "//*[contains(@font-family,'Arial')]/@font-family" \
+                -v "'Liberation Sans', Arial, sans-serif" \
+                "$path_out"
+        xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
+                -u "//*[contains(@font-family,'arial')]/@font-family" \
+                -v "'Liberation Sans', Arial, sans-serif" \
                 "$path_out"
 
-            sed -i '/<style.*>/{
-        r '"$SCRIPT_DIR/../plain.css"'
-        }' "$path_out"
+        xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
+                -i "/svg:svg/svg:defs/svg:g/svg:marker/svg:path[not(@fill)]" -t attr -n "fill" -v "REPLACE_ME" \
+                -u "/svg:svg/svg:defs/svg:g/svg:marker/svg:path[@fill='REPLACE_ME']/@fill" \
+                -v "currentColor" \
+                "$path_out"
 
-            #############################
-            # SVG > .dark.pvjssvg
-            #############################
-            path_out_dark_pvjssvg="$dir_out/$bare_stub_out.dark.pvjssvg"
-            cat "$path_out" | xmlstarlet ed -O -N svg='http://www.w3.org/2000/svg' \
-                    -u "/svg:svg/svg:style/text()" \
-                    -v "
-        " > \
-                "$path_out_dark_pvjssvg"
+    #  		  -u "/svg:svg/@color" \
+    #		  -v "black" \
+    #		  -u "/svg:svg/svg:g/@color" \
+    #		  -v "black" \
+        xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
+        -u "/svg:svg/svg:g//svg:text[@stroke-width='0.05px']/@stroke-width" \
+        -v "0px" \
+        -d "/svg:svg/svg:g//*/svg:text/@overflow" \
+        -d "/svg:svg/svg:g//*/svg:text/@dominant-baseline" \
+        -d "/svg:svg/svg:g//*/svg:text/@clip-path" \
+        -d "/svg:svg/svg:g//svg:defs" \
+        -d "/svg:svg/svg:g//svg:text[@stroke-width='0.05px']/@stroke-width" \
+        "$path_out";
 
-            sed -i '/<style.*>/{
-        r '"$SCRIPT_DIR/../dark.css"'
-        }' "$path_out_dark_pvjssvg"
+        # We are pushing the text down based on font size.
+        # This is needed because librsvg doesn't support attribute "alignment-baseline".
+        el_count=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "count(/svg:svg/svg:g//svg:text)" "$path_out")
+        for i in $(seq $el_count); do
+            font_size=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//svg:text)[$i]/@font-size" "$path_out" | sed 's/^\([0-9.]*\)px$/\1/g');
+          font_size=${font_size:-5}
+          x_translation=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//svg:text)[$i]/@transform" "$path_out" | sed 's/^translate[(]\([0-9.]*\),\([0-9.]*\)[)]$/\1/g');
+          y_translation=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//svg:text)[$i]/@transform" "$path_out" | sed 's/^translate[(]\([0-9.]*\),\([0-9.]*\)[)]$/\2/g');
+          updated_y_translation=$(echo "$font_size / 3 + $y_translation" | bc)
+          xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
+                -u "(/svg:svg/svg:g//svg:text)[$i]/@transform" \
+                -v "translate($x_translation,$updated_y_translation)" \
+                "$path_out";
+        done
 
-          else
-            #############################
-            # SVG > .svg
-            #############################
+        # Linkify
+        path_out_tmp="$path_out.tmp.svg"
+        cp "$path_out" "$path_out_tmp"
+        el_count=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "count(/svg:svg/svg:g//*[@class])" "$path_out_tmp")
+        for i in $(seq $el_count); do
+            readarray -t wditems <<<$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t \
+                    -v "(/svg:svg/svg:g//*[@class])[$i]/@class" "$path_out_tmp" | \
+                awk '/Wikidata_Q[0-9]+/' | tr ' ' '\n' | awk '/Wikidata_Q[0-9]+/');
+        wditems_len="${#wditems[@]}"
+            if [[ wditems_len -eq 1 ]]; then
+            wditem=${wditems[0]}
+            if [ ! -z $wditem ]; then
 
-            # TODO: make the stand-alone SVGs work for upload to WM Commons:
-            # https://www.mediawiki.org/wiki/Manual:Coding_conventions/SVG
-            # https://commons.wikimedia.org/wiki/Help:SVG
-            # https://commons.wikimedia.org/wiki/Commons:Commons_SVG_Checker?withJS=MediaWiki:CommonsSvgChecker.js
-            # The W3 validator might be outdated. It doesn't allow for RDFa attributes.
-            # http://validator.w3.org/#validate_by_upload+with_options
+                #wikidata_iri=$(echo "$wditem" | awk -F'_' '{print "https://www.wikidata.org/wiki/"$NF}')
+                scholia_iri=$(echo "$wditem" | awk -F'_' '{print "https://tools.wmflabs.org/scholia/"$NF}')
 
-
-            # WM says: "the recommended image height is around 400–600 pixels. When a
-            #           user views the full size image, a width of 600–800 pixels gives
-            #           them a good close-up view"
-            # https://commons.wikimedia.org/wiki/Help:SVG#Frequently_asked_questions
-
-            pvjs < "$json_f" | \
-              xmlstarlet ed -N svg='http://www.w3.org/2000/svg' \
-                            -i '/svg:svg' --type attr -n width -v '800px' \
-                            -i '/svg:svg' --type attr -n height -v '600px' \
-                            -u "/svg:svg/svg:style/text()" \
-                            -v "
-        " \
-              > "$path_out"
-
-            fix_pvjs_bugs "$path_out"
-
-            sed -i '/<style.*>/{
-        r '"$metabolite_patterns_css_f"'
-        }' "$path_out"
-
-            sed -i '/<g id="jic-defs">/{
-        r /dev/stdin
-        }' "$path_out" < <(xmlstarlet sel -t -c '/svg/defs/*' "$metabolite_patterns_svg_f")
-
-            edge_count=$(cat "$path_out" | xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v 'count(/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')])')
-            for i in $(seq $edge_count); do
-              xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                      -m "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')][$i]/svg:g/svg:path" \
-                      "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')][$i]" \
-                      "$path_out";
-            done
-
-            xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                    -m "/svg:svg/svg:defs/svg:g[@id='jic-defs']/svg:svg/svg:defs/*" \
-                    "/svg:svg/svg:defs/svg:g[@id='jic-defs']" \
-                    -d "/svg:svg/svg:defs/svg:g[@id='jic-defs']/svg:svg" \
-                    "$path_out";
-
-            for attr in "filter" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"; do
-              xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                      -i "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]" -t attr -n "$attr" -v "REPLACE_ME" \
-                      -u "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]/@$attr" \
-                      -x "string(../svg:g/@$attr)" \
-                      "$path_out"
-            done
-
-            for attr in "color" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"; do
-              xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                            -i "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]/svg:path" -t attr -n "$attr" -v "REPLACE_ME" \
-                            -u "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]/svg:path/@$attr" \
-                            -x "string(../../svg:g/@$attr)" \
-                            "$path_out"
-            done
-
-            xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                          -d "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]/svg:g" \
-                          -d "/svg:svg/svg:g/svg:g[contains(@typeof,'Edge')]/svg:path/@style" \
-                          "$path_out"
-
-            # Which of the following is correct?
-            # To make the SVG file independent of Arial, change all occurrences of
-            #   font-family: Arial to font-family: 'Liberation Sans', Arial, sans-serif
-            #   https://commons.wikimedia.org/wiki/Help:SVG#fallback
-            # vs.
-            # Phab:T64987, Phab:T184369, Gnome #95; font-family="'font name'"
-            #   (internally quoted font family name) does not work
-            #   (File:Mathematical_implication_diagram-alt.svg, File:T184369.svg)
-            #   https://commons.wikimedia.org/wiki/Commons:Commons_SVG_Checker?withJS=MediaWiki:CommonsSvgChecker.js
-
-            # The kerning for Liberation Sans has some issues, at least when run through librsvg.
-            # Liberation Sans is the open replacement for Arial, but DejaVu Sans with transform="scale(0.92,0.98)"
-            # might have better kerning while taking up about the same amount of space.
-
-            # Long-term, should we switch our default font from Arial to something prettier?
-            # It would have to be a well-supported font.
-            # This page <https://commons.wikimedia.org/wiki/Help:SVG#fallback> says:
-            #     On Commons, librsvg has the fonts listed in:
-            #     https://meta.wikimedia.org/wiki/SVG_fonts#Latin_(basic)_fonts_comparison
-            #     ...
-            #     In graphic illustrations metric exact text elements are often important
-            #     and Arial can be seen as de-facto standard for such a feature.
-            xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                    -u "//*[contains(@font-family,'Arial')]/@font-family" \
-                    -v "'Liberation Sans', Arial, sans-serif" \
-                    "$path_out"
-            xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                    -u "//*[contains(@font-family,'arial')]/@font-family" \
-                    -v "'Liberation Sans', Arial, sans-serif" \
-                    "$path_out"
-
-            xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                    -i "/svg:svg/svg:defs/svg:g/svg:marker/svg:path[not(@fill)]" -t attr -n "fill" -v "REPLACE_ME" \
-                    -u "/svg:svg/svg:defs/svg:g/svg:marker/svg:path[@fill='REPLACE_ME']/@fill" \
-                    -v "currentColor" \
-                    "$path_out"
-
-        #  		  -u "/svg:svg/@color" \
-        #		  -v "black" \
-        #		  -u "/svg:svg/svg:g/@color" \
-        #		  -v "black" \
-            xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-            -u "/svg:svg/svg:g//svg:text[@stroke-width='0.05px']/@stroke-width" \
-            -v "0px" \
-            -d "/svg:svg/svg:g//*/svg:text/@overflow" \
-            -d "/svg:svg/svg:g//*/svg:text/@dominant-baseline" \
-            -d "/svg:svg/svg:g//*/svg:text/@clip-path" \
-            -d "/svg:svg/svg:g//svg:defs" \
-            -d "/svg:svg/svg:g//svg:text[@stroke-width='0.05px']/@stroke-width" \
-            "$path_out";
-
-            # We are pushing the text down based on font size.
-            # This is needed because librsvg doesn't support attribute "alignment-baseline".
-            el_count=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "count(/svg:svg/svg:g//svg:text)" "$path_out")
-            for i in $(seq $el_count); do
-                font_size=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//svg:text)[$i]/@font-size" "$path_out" | sed 's/^\([0-9.]*\)px$/\1/g');
-              font_size=${font_size:-5}
-              x_translation=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//svg:text)[$i]/@transform" "$path_out" | sed 's/^translate[(]\([0-9.]*\),\([0-9.]*\)[)]$/\1/g');
-              y_translation=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//svg:text)[$i]/@transform" "$path_out" | sed 's/^translate[(]\([0-9.]*\),\([0-9.]*\)[)]$/\2/g');
-              updated_y_translation=$(echo "$font_size / 3 + $y_translation" | bc)
-              xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                    -u "(/svg:svg/svg:g//svg:text)[$i]/@transform" \
-                    -v "translate($x_translation,$updated_y_translation)" \
-                    "$path_out";
-            done
-          
-            # TODO: how about using these: https://reactome.org/icon-lib
-            # for example, mitochondrion: https://reactome.org/icon-lib?f=cell_elements#Mitochondrion.svg
-            # They appear to be CC-4.0, which might mean we can't upload them to WM Commons?
-
-            # Linkify
-            path_out_tmp="$path_out.tmp.svg"
-            cp "$path_out" "$path_out_tmp"
-            el_count=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "count(/svg:svg/svg:g//*[@class])" "$path_out_tmp")
-            for i in $(seq $el_count); do
-                readarray -t wditems <<<$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t \
-                        -v "(/svg:svg/svg:g//*[@class])[$i]/@class" "$path_out_tmp" | \
-                    awk '/Wikidata_Q[0-9]+/' | tr ' ' '\n' | awk '/Wikidata_Q[0-9]+/');
-            wditems_len="${#wditems[@]}"
-                if [[ wditems_len -eq 1 ]]; then
-                wditem=${wditems[0]}
-                if [ ! -z $wditem ]; then
-
-                    #wikidata_iri=$(echo "$wditem" | awk -F'_' '{print "https://www.wikidata.org/wiki/"$NF}')
-                    scholia_iri=$(echo "$wditem" | awk -F'_' '{print "https://tools.wmflabs.org/scholia/"$NF}')
-
-                    xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                                -i "(/svg:svg/svg:g//*[@class])[$i]" \
-                                -t attr -n "xlink:href" \
-                                -v "$scholia_iri" \
-                                "$path_out_tmp";
-                
-                    xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                                -i "(/svg:svg/svg:g//*[@class])[$i]" \
-                                -t attr -n "target" \
-                                -v "_blank" \
-                                "$path_out_tmp";
-                
-                    xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                                -r "(/svg:svg/svg:g//*[@class])[$i]" \
-                                -v "a" \
-                                "$path_out_tmp";
-                fi
-                fi
-                
-            done
-            
-            mv "$path_out_tmp" "$path_out"
-
-            #############################
-            # SVG > .dark.svg
-            #############################
-            path_out_dark_svg="$dir_out/$bare_stub_out.dark.svg"
-
-            # Invert colors and filters
-          
-            cat "$path_out" | xmlstarlet ed -N svg='http://www.w3.org/2000/svg' \
-                  -u "/svg:svg/@color" \
-                  -v "white" \
-                  -u "/svg:svg/svg:g/@color" \
-                  -v "white" > \
-                  "$path_out_dark_svg"
-
-            for attr in "color" "fill" "stroke"; do
-              el_count=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "count(/svg:svg/svg:g//*[@$attr])" "$path_out_dark_svg")
-              for i in $(seq $el_count); do
-                color=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//*[@$attr])[$i]/@$attr" "$path_out_dark_svg");
-                inverted_color=$(invert_color $color)
                 xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                          -u "(/svg:svg/svg:g//*[@$attr])[$i]/@$attr" \
-                      -v "$inverted_color" \
-                      "$path_out_dark_svg";
-              done
-            done
+                            -i "(/svg:svg/svg:g//*[@class])[$i]" \
+                            -t attr -n "xlink:href" \
+                            -v "$scholia_iri" \
+                            "$path_out_tmp";
+            
+                xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
+                            -i "(/svg:svg/svg:g//*[@class])[$i]" \
+                            -t attr -n "target" \
+                            -v "_blank" \
+                            "$path_out_tmp";
+            
+                xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
+                            -r "(/svg:svg/svg:g//*[@class])[$i]" \
+                            -v "a" \
+                            "$path_out_tmp";
+            fi
+            fi
+            
+        done
+        
+        mv "$path_out_tmp" "$path_out"
 
-            el_count=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "count(/svg:svg/svg:g//*[@filter])" "$path_out_dark_svg")
-            for i in $(seq $el_count); do
-              filter_value=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//*[@filter])[$i]/@filter" "$path_out_dark_svg");
-              inverted_filter_value=$(invert_filter $filter_value)
-              xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                    -u "(/svg:svg/svg:g//*[@filter])[$i]/@filter" \
-                    -v "$inverted_filter_value" \
-                    "$path_out_dark_svg";
-            done
-          
-            # clip-path needed because rx and ry don't work in FF or Safari
+        #############################
+        # SVG > .dark.svg
+        #############################
+        path_out_dark_svg="$dir_out/$bare_stub_out.dark.svg"
+
+        # Invert colors and filters
+      
+        cat "$path_out" | xmlstarlet ed -N svg='http://www.w3.org/2000/svg' \
+              -u "/svg:svg/@color" \
+              -v "white" \
+              -u "/svg:svg/svg:g/@color" \
+              -v "white" > \
+              "$path_out_dark_svg"
+
+        for attr in "color" "fill" "stroke"; do
+          el_count=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "count(/svg:svg/svg:g//*[@$attr])" "$path_out_dark_svg")
+          for i in $(seq $el_count); do
+            color=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//*[@$attr])[$i]/@$attr" "$path_out_dark_svg");
+            inverted_color=$(invert_color $color)
             xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                  -u "/svg:svg/svg:g/svg:rect[contains(@class,'Icon')]/@fill" \
-                  -v "#3d3d3d" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'Edge')]/svg:path/@stroke-width" \
-                  -v "1.1px" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupGroup')]/*[contains(@class,'Icon')]/@fill" \
-                  -v "transparent" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupGroup')]/*[contains(@class,'Icon')]/@stroke-width" \
-                  -v "0px" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupComplex')]/*[contains(@class,'Icon')]/@fill" \
-                  -v "#B4B464" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupComplex')]/*[contains(@class,'Icon')]/@fill-opacity" \
-                  -v "0.1" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupComplex')]/*[contains(@class,'Icon')]/@stroke" \
-                  -v "#808080" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupNone')]/*[contains(@class,'Icon')]/@fill" \
-                  -v "#B4B464" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupNone')]/*[contains(@class,'Icon')]/@fill-opacity" \
-                  -v "0.1" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupNone')]/*[contains(@class,'Icon')]/@stroke" \
-                  -v "#808080" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupPathway')]/*[contains(@class,'Icon')]/@fill" \
-                  -v "#008000" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupPathway')]/*[contains(@class,'Icon')]/@fill-opacity" \
-                  -v "0.05" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupPathway')]/*[contains(@class,'Icon')]/@stroke" \
-                  -v "#808080" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'CellularComponent')]/*[contains(@class,'Icon')]/@color" \
-                  -v "red" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'CellularComponent')]/*[contains(@class,'Icon')]/@fill" \
-                  -v "pink" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'CellularComponent')]/*[contains(@class,'Icon')]/@fill-opacity" \
-                  -v "0.05" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'CellularComponent')]/*[contains(@class,'Icon')]/@stroke" \
-                  -v "orange" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'Label')]/*[contains(@class,'Icon')]/@color" \
-                  -v "transparent" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'Label')]/*[contains(@class,'Icon')]/@fill" \
-                  -v "none" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'Label')]/*[contains(@class,'Icon')]/@fill-opacity" \
-                  -v "0" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'Label')]/*[contains(@class,'Icon')]/@stroke" \
-                  -v "none" \
-                  -i "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Icon')]" -t attr -n "clip-path" -v "url(#ClipPathRoundedRectangle)" \
-                          -i "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Icon')]" -t attr -n "rx" -v "15px" \
-                          -i "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Icon')]" -t attr -n "ry" -v "15px" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Icon')]/@stroke-width" \
-                  -v "0px" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Text')]/@font-weight" \
-                  -v "bold" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'GeneProduct')]/*[contains(@class,'Icon')]/@fill" \
-                  -v "#f4d03f" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'GeneProduct')]/*[contains(@class,'Text')]/@fill" \
-                  -v "#333" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Protein')]/*[contains(@class,'Icon')]/@fill" \
-                  -v "brown" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Protein')]/*[contains(@class,'Text')]/@fill" \
-                  -v "#FEFEFE" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Rna')]/*[contains(@class,'Icon')]/@fill" \
-                  -v "#9453A7" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Rna')]/*[contains(@class,'Text')]/@fill" \
-                  -v "#ECF0F1" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Icon')]/@xlink:href" \
-                  -v "#Rectangle" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Icon')]/@fill" \
-                  -v "#75C95C" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Icon')]/@fill-opacity" \
-                  -v "1" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Text')]/@stroke" \
-                  -v "transparent" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Text')]/@stroke-width" \
-                  -v "0px" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Text')]/@fill" \
-                  -v "#1C2833" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Metabolite')]/*[contains(@class,'Icon')]/@fill" \
-                  -v "#0000EE" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Metabolite')]/*[contains(@class,'Text')]/@fill" \
-                  -v "#FEFEFE" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Icon')]/@fill" \
-                  -v "#fefefe" \
-                  -i "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Icon')]" \
-                  -t attr -n "color" \
-                  -v "gray" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Icon')]/@stroke" \
-                  -v "gray" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Icon')]/@stroke-width" \
-                  -v "1px" \
-                  -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Text')]/@fill" \
-                  -v "black" \
-                  "$path_out_dark_svg"
-      fi
+                      -u "(/svg:svg/svg:g//*[@$attr])[$i]/@$attr" \
+                  -v "$inverted_color" \
+                  "$path_out_dark_svg";
+          done
+        done
+
+        el_count=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "count(/svg:svg/svg:g//*[@filter])" "$path_out_dark_svg")
+        for i in $(seq $el_count); do
+          filter_value=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//*[@filter])[$i]/@filter" "$path_out_dark_svg");
+          inverted_filter_value=$(invert_filter $filter_value)
+          xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
+                -u "(/svg:svg/svg:g//*[@filter])[$i]/@filter" \
+                -v "$inverted_filter_value" \
+                "$path_out_dark_svg";
+        done
+      
+        # clip-path needed because rx and ry don't work in FF or Safari
+        xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
+              -u "/svg:svg/svg:g/svg:rect[contains(@class,'Icon')]/@fill" \
+              -v "#3d3d3d" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'Edge')]/svg:path/@stroke-width" \
+              -v "1.1px" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupGroup')]/*[contains(@class,'Icon')]/@fill" \
+              -v "transparent" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupGroup')]/*[contains(@class,'Icon')]/@stroke-width" \
+              -v "0px" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupComplex')]/*[contains(@class,'Icon')]/@fill" \
+              -v "#B4B464" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupComplex')]/*[contains(@class,'Icon')]/@fill-opacity" \
+              -v "0.1" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupComplex')]/*[contains(@class,'Icon')]/@stroke" \
+              -v "#808080" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupNone')]/*[contains(@class,'Icon')]/@fill" \
+              -v "#B4B464" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupNone')]/*[contains(@class,'Icon')]/@fill-opacity" \
+              -v "0.1" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupNone')]/*[contains(@class,'Icon')]/@stroke" \
+              -v "#808080" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupPathway')]/*[contains(@class,'Icon')]/@fill" \
+              -v "#008000" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupPathway')]/*[contains(@class,'Icon')]/@fill-opacity" \
+              -v "0.05" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupPathway')]/*[contains(@class,'Icon')]/@stroke" \
+              -v "#808080" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'CellularComponent')]/*[contains(@class,'Icon')]/@color" \
+              -v "red" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'CellularComponent')]/*[contains(@class,'Icon')]/@fill" \
+              -v "pink" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'CellularComponent')]/*[contains(@class,'Icon')]/@fill-opacity" \
+              -v "0.05" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'CellularComponent')]/*[contains(@class,'Icon')]/@stroke" \
+              -v "orange" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'Label')]/*[contains(@class,'Icon')]/@color" \
+              -v "transparent" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'Label')]/*[contains(@class,'Icon')]/@fill" \
+              -v "none" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'Label')]/*[contains(@class,'Icon')]/@fill-opacity" \
+              -v "0" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'Label')]/*[contains(@class,'Icon')]/@stroke" \
+              -v "none" \
+              -i "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Icon')]" -t attr -n "clip-path" -v "url(#ClipPathRoundedRectangle)" \
+                      -i "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Icon')]" -t attr -n "rx" -v "15px" \
+                      -i "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Icon')]" -t attr -n "ry" -v "15px" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Icon')]/@stroke-width" \
+              -v "0px" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Text')]/@font-weight" \
+              -v "bold" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'GeneProduct')]/*[contains(@class,'Icon')]/@fill" \
+              -v "#f4d03f" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'GeneProduct')]/*[contains(@class,'Text')]/@fill" \
+              -v "#333" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Protein')]/*[contains(@class,'Icon')]/@fill" \
+              -v "brown" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Protein')]/*[contains(@class,'Text')]/@fill" \
+              -v "#FEFEFE" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Rna')]/*[contains(@class,'Icon')]/@fill" \
+              -v "#9453A7" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Rna')]/*[contains(@class,'Text')]/@fill" \
+              -v "#ECF0F1" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Icon')]/@xlink:href" \
+              -v "#Rectangle" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Icon')]/@fill" \
+              -v "#75C95C" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Icon')]/@fill-opacity" \
+              -v "1" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Text')]/@stroke" \
+              -v "transparent" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Text')]/@stroke-width" \
+              -v "0px" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Text')]/@fill" \
+              -v "#1C2833" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Metabolite')]/*[contains(@class,'Icon')]/@fill" \
+              -v "#0000EE" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Metabolite')]/*[contains(@class,'Text')]/@fill" \
+              -v "#FEFEFE" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Icon')]/@fill" \
+              -v "#fefefe" \
+              -i "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Icon')]" \
+              -t attr -n "color" \
+              -v "gray" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Icon')]/@stroke" \
+              -v "gray" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Icon')]/@stroke-width" \
+              -v "1px" \
+              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Text')]/@fill" \
+              -v "black" \
+              "$path_out_dark_svg"
       """
+
+    #########################################
+    # Future enhancements for pretty version
+    #########################################
+
+    # Glyphs from reactome
+    # TODO: how about using these: https://reactome.org/icon-lib
+    # for example, mitochondrion: https://reactome.org/icon-lib?f=cell_elements#Mitochondrion.svg
+    # They appear to be CC-4.0, which might mean we can't upload them to WM Commons?
+
+    # Glyphs from SMILES
+    #        metabolite_patterns_css_f = (
+    #            f"{dir_out}/{bare_stub_out}.metabolite-patterns-uri.css"
+    #        )
+    #        metabolite_patterns_svg_f = (
+    #            f"{dir_out}/{bare_stub_out}.metabolite-patterns-uri.svg"
+    #        )
+    #
+    #        if path.exists(metabolite_patterns_svg_f) and path.exists(
+    #            metabolite_patterns_css_f
+    #        ):
+    #            print(
+    #                f"{metabolite_patterns_svg_f} & {metabolite_patterns_css_f} already exist. To overwrite, delete them & try again."
+    #            )
+    #        else:
+    #            # If only one of them exists, we recreate both
+    #            if path.exists(metabolite_patterns_svg_f):
+    #                os.remove(metabolite_patterns_svg_f)
+    #            elif path.exists(metabolite_patterns_css_f):
+    #                os.remove(metabolite_patterns_css_f)
+    #
+    #            metabolite_patterns_svg_tree = ET.parse(
+    #                "<svg><defs></defs></svg>", parser=parser
+    #            )
+    #            metabolite_patterns_svg_root = metabolite_patterns_svg_tree.getroot()
+    #
+    #            # TODO convert the following sh script to Python
+    #            """
+    #            jq -r '[.entitiesById[] | select(.type | contains(["Metabolite"]))] | unique_by(.type)[] | [.xrefDataSource, .xrefIdentifier, [.type[] | select(startswith("wikidata:"))][0], [.type[] | select(startswith("hmdb:") and length == 14)][0]] | @tsv' "$json_f" | \
+    #             while IFS=$'\t' read -r data_source identifier wikidata_id hmdb_id; do
+    #              wikidata_identifier=$(echo "$wikidata_id" | sed 's/wikidata://');
+    #              bridgedb_request_uri="http://webservice.bridgedb.org/Human/attributes/$data_source/$identifier?attrName=SMILES"
+    #              if [ -z "$data_source" ] || [ -z "$identifier" ]; then
+    #                echo "Missing Xref data source and/or identifier in $stub_out";
+    #                continue;
+    #              fi
+    #
+    #              smiles=$(curl -Ls "$bridgedb_request_uri")
+    #              bridgedb_request_status=$?
+    #
+    #              if [ "$bridgedb_request_status" != 0 ] || [ -z "$smiles" ] || [[ "$smiles" =~ 'The server has not found anything matching the request URI' ]]; then
+    #            #    if [ "$bridgedb_request_status" != 0 ]; then
+    #            #      echo "Failed to get SMILES string for $stub_out:$data_source:$identifier from $bridgedb_request_uri (status code: $bridgedb_request_status)";
+    #            #    elif [ -z "$smiles" ]; then
+    #            #      echo "Failed to get SMILES string for $stub_out:$data_source:$identifier from $bridgedb_request_uri (nothing returned)";
+    #            #    elif [[ "$smiles" =~ 'The server has not found anything matching the request URI' ]]; then
+    #            #      echo "Failed to get SMILES string for $stub_out:$data_source:$identifier from $bridgedb_request_uri";
+    #            #      echo '(The server has not found anything matching the request URI)'
+    #            #    fi
+    #
+    #                # If the DataSource and Identifier specified don't get us a SMILES string,
+    #                # it could be because BridgeDb doesn't support queries for that DataSource.
+    #                # For example, WP396_97382 has a DataNode with PubChem-compound:3081372,
+    #                # http://webservice.bridgedb.org/Human/attributes/PubChem-compound/3081372?attrName=SMILES
+    #                # doesn't return anything. However, that DataNode can be mapped to HMDB:HMDB61196, and
+    #                # the url http://webservice.bridgedb.org/Human/attributes/HMDB/HMDB61196
+    #                # does return a SMILES string.
+    #                # Note that BridgeDb currently requires us to use the 5 digit HMDB identifier,
+    #                # even though there is another format that uses more digits.
+    #
+    #                if [ ! -z "$hmdb_id" ]; then
+    #                  hmdb_identifier="HMDB"${hmdb_id:(-5)};
+    #                  bridgedb_request_uri_orig="$bridgedb_request_uri"
+    #                  bridgedb_request_uri="http://webservice.bridgedb.org/Human/attributes/HMDB/$hmdb_identifier?attrName=SMILES"
+    #                  #echo "Trying alternate bridgedb_request_uri: $bridgedb_request_uri"
+    #                  smiles=$(curl -Ls "$bridgedb_request_uri")
+    #                  bridgedb_request_status=$?
+    #                  if [ "$bridgedb_request_status" != 0 ]; then
+    #                    echo "Failed to get SMILES string for $stub_out:$data_source:$identifier from both $bridgedb_request_uri_orig and alternate $bridgedb_request_uri (status code: $bridgedb_request_status)";
+    #                    continue;
+    #                  elif [ -z "$smiles" ]; then
+    #                    echo "Failed to get SMILES string for $stub_out:$data_source:$identifier from both $bridgedb_request_uri_orig and alternate $bridgedb_request_uri (nothing returned)";
+    #                    continue;
+    #                  elif [[ "$smiles" =~ 'The server has not found anything matching the request URI' ]]; then
+    #                    echo "Failed to get SMILES string for $stub_out:$data_source:$identifier from both $bridgedb_request_uri_orig and alternate $bridgedb_request_uri";
+    #                    echo '(The server has not found anything matching the request URI)'
+    #                    continue;
+    #                  fi
+    #                else
+    #                  continue;
+    #                fi
+    #              fi
+    #
+    #              smiles_url_encoded=$(echo "$smiles" | jq -Rr '@uri')
+    #              cdkdepict_url="http://www.simolecule.com/cdkdepict/depict/bow/svg?smi=$smiles_url_encoded&abbr=on&hdisp=bridgehead&showtitle=false&zoom=1.0&annotate=none"
+    #
+    #              cat >> "$css_out" <<EOF
+    #            [typeof~="wikidata:$wikidata_identifier"]:hover > .Icon {
+    #              cursor: default;
+    #              fill: url(#Pattern$wikidata_identifier);
+    #              transform-box: fill-box;
+    #              transform: scale(2, 3);
+    #              transform-origin: 50% 50%;
+    #            }
+    #            [typeof~="wikidata:$wikidata_identifier"]:hover > .Text {
+    #              font-size: 0px;
+    #            }
+    #            EOF
+    #
+    #              # TODO: do we want to disable the clip-path on hover?
+    #              #[typeof~=wikidata:$wikidata_identifier]:hover > .Icon {
+    #              #  clip-path: unset;
+    #              #  rx: unset;
+    #              #  ry: unset;
+    #              #  cursor: default;
+    #              #  fill: url(#Pattern$wikidata_identifier);
+    #              #  transform-box: fill-box;
+    #              #  transform: scale(2, 3);
+    #              #  transform-origin: 50% 50%;
+    #              #}
+    #
+    #              #  "transform-box: fill-box" is needed for FF.
+    #              #  https://bugzilla.mozilla.org/show_bug.cgi?id=1209061
+    #
+    #              xmlstarlet ed -L \
+    #                                -s "/svg/defs" -t elem -n "pattern" -v "" \
+    #                            --var prevpattern '$prev' \
+    #                                -s '$prevpattern' -t elem -n "image" -v "" \
+    #                            --var previmage '$prev' \
+    #                                -i '$prevpattern' -t attr -n "id" -v "Pattern$wikidata_identifier" \
+    #                                -i '$prevpattern' -t attr -n "width" -v "100%" \
+    #                                -i '$prevpattern' -t attr -n "height" -v "100%" \
+    #                                -i '$prevpattern' -t attr -n "patternContentUnits" -v "objectBoundingBox" \
+    #                                -i '$prevpattern' -t attr -n "preserveAspectRatio" -v "none" \
+    #                                -i '$prevpattern' -t attr -n "viewBox" -v "0 0 1 1" \
+    #                                -i '$previmage' -t attr -n "width" -v "1" \
+    #                                -i '$previmage' -t attr -n "height" -v "1" \
+    #                                -i '$previmage' -t attr -n "href" -v "$cdkdepict_url" \
+    #                                -i '$previmage' -t attr -n "preserveAspectRatio" -v "none" \
+    #                      "$svg_out"
+    #            done
+    #
+    #            sed -i '/<style.*>/{
+    #        r '"$metabolite_patterns_css_f"'
+    #        }' "$path_out"
+    #
+    #            sed -i '/<g id="jic-defs">/{
+    #        r /dev/stdin
+    #        }' "$path_out" < <(xmlstarlet sel -t -c '/svg/defs/*' "$metabolite_patterns_svg_f")
+    #            """
     else:
         raise Exception(f"Invalid output extension: '{ext_out}'")
 
