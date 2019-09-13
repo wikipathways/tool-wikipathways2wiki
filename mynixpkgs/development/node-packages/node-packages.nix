@@ -16,8 +16,11 @@ in
   nodePackages_8_x = nodePackages_8_x;
   nodePackages_10_x = nodePackages_10_x;
   nodePackages_12_x = nodePackages_12_x;
+
   depcheck = nodePackages.depcheck;
+  typescript = nodePackages.typescript;
   gpml2pvjson = nodePackages.gpml2pvjson;
   bridgedb = nodePackages.bridgedb;
   pvjs = nodePackages."@wikipathways/pvjs";
+  svgo = nodePackages.svgo;
 }

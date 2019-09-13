@@ -3940,4 +3940,81 @@ in
     production = true;
     bypassCache = true;
   };
+  svgo = nodeEnv.buildNodePackage {
+    name = "svgo";
+    packageName = "svgo";
+    version = "1.3.0";
+    src = fetchurl {
+      url = "https://registry.npmjs.org/svgo/-/svgo-1.3.0.tgz";
+      sha512 = "MLfUA6O+qauLDbym+mMZgtXCGRfIxyQoeH6IKVcFslyODEe/ElJNwr0FohQ3xG4C6HK6bk3KYPPXwHVJk3V5NQ==";
+    };
+    dependencies = [
+      sources."@types/q-1.5.2"
+      sources."ansi-styles-3.2.1"
+      sources."argparse-1.0.10"
+      sources."boolbase-1.0.0"
+      sources."chalk-2.4.2"
+      sources."coa-2.0.2"
+      sources."color-convert-1.9.3"
+      sources."color-name-1.1.3"
+      sources."css-select-2.0.2"
+      sources."css-select-base-adapter-0.1.1"
+      sources."css-tree-1.0.0-alpha.33"
+      sources."css-what-2.1.3"
+      (sources."csso-3.5.1" // {
+        dependencies = [
+          sources."css-tree-1.0.0-alpha.29"
+          sources."mdn-data-1.1.4"
+        ];
+      })
+      sources."define-properties-1.1.3"
+      (sources."dom-serializer-0.2.1" // {
+        dependencies = [
+          sources."domelementtype-2.0.1"
+        ];
+      })
+      sources."domelementtype-1.3.1"
+      sources."domutils-1.7.0"
+      sources."entities-2.0.0"
+      sources."es-abstract-1.14.2"
+      sources."es-to-primitive-1.2.0"
+      sources."escape-string-regexp-1.0.5"
+      sources."esprima-4.0.1"
+      sources."function-bind-1.1.1"
+      sources."has-1.0.3"
+      sources."has-flag-3.0.0"
+      sources."has-symbols-1.0.0"
+      sources."is-callable-1.1.4"
+      sources."is-date-object-1.0.1"
+      sources."is-regex-1.0.4"
+      sources."is-symbol-1.0.2"
+      sources."js-yaml-3.13.1"
+      sources."mdn-data-2.0.4"
+      sources."minimist-0.0.8"
+      sources."mkdirp-0.5.1"
+      sources."nth-check-1.0.2"
+      sources."object-inspect-1.6.0"
+      sources."object-keys-1.1.1"
+      sources."object.getownpropertydescriptors-2.0.3"
+      sources."object.values-1.1.0"
+      sources."q-1.5.1"
+      sources."sax-1.2.4"
+      sources."source-map-0.5.7"
+      sources."sprintf-js-1.0.3"
+      sources."stable-0.1.8"
+      sources."string.prototype.trimleft-2.1.0"
+      sources."string.prototype.trimright-2.1.0"
+      sources."supports-color-5.5.0"
+      sources."unquote-1.1.1"
+      sources."util.promisify-1.0.0"
+    ];
+    buildInputs = globalBuildInputs;
+    meta = {
+      description = "Nodejs-based tool for optimizing SVG vector graphics files";
+      homepage = https://github.com/svg/svgo;
+      license = "MIT";
+    };
+    production = true;
+    bypassCache = true;
+  };
 }
