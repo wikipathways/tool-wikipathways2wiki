@@ -33,6 +33,7 @@ cd "$SCRIPT_DIR";
 rm -f node-env.nix;
 
 node2nix --nodejs-10 -i node-packages-v10.json -o node-packages-v10.nix -c composition-v10.nix
+# not working for node 12 at present. see https://github.com/svanderburg/node2nix/issues/153
 node2nix --nodejs-12 -i node-packages-v12.json -o node-packages-v12.nix -c composition-v12.nix
 
 # TODO: look at whether to use a lock file somehow.
