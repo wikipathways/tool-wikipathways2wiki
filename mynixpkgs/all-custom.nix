@@ -1,19 +1,11 @@
 with import <nixpkgs> { config.allowUnfree = true; };
-
+with lib.trivial;
 let
   python3Packages = import ./development/python-modules/python-packages.nix;
-  nodePackages_10_x = callPackage ./development/node-packages/default-v10.nix {
-    nodejs = pkgs.nodejs-10_x;
-  };
-  nodePackages = nodePackages_10_x;
+  nodePackages = import ./development/node-packages/node-packages.nix;
 in
-{
+mergeAttrs nodePackages {
   python3Packages = python3Packages;
-  nodePackages = nodePackages;
-  depcheck = nodePackages.depcheck;
-  gpml2pvjson = nodePackages.gpml2pvjson;
-  bridgedb = nodePackages.bridgedb;
-  pvjs = nodePackages."@wikipathways/pvjs";
 
   bash-it = callPackage ./bash-it/default.nix {}; 
   black = callPackage ./black/default.nix {}; 
