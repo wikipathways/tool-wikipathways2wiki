@@ -71,8 +71,8 @@ autocmd BufReadPost quickfix nnoremap <buffer> <CR> <CR>
 let g:neoformat_enabled_css = ['prettier']
 let g:neoformat_enabled_html = ['js-beautify --html']
 let g:neoformat_enabled_javascript = ['prettier']
-let g:neoformat_enabled_json = ['prettier']
 let g:neoformat_enabled_markdown = ['prettier']
+let g:neoformat_enabled_json = ['jq']
 
 let g:neoformat_enabled_php = ['phpcsfixer']
 " TODO look at using phpcbf vs. phpcsfixer. (NOTE: phpcbf not currently a supported option for Neoformat.)
