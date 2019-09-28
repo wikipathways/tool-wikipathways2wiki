@@ -21,6 +21,7 @@ in [
   pkgs.nodePackages.typescript
   pkgs.python3Packages.jsbeautifier
   pkgs.php72Packages.php-cs-fixer
+  pkgs.jq
 
   # Python, Python Language Server & PYLS deps
   (pkgs.python3.withPackages (p: with p; [
