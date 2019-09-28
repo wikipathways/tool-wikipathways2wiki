@@ -19,6 +19,8 @@ import pywikibot
 from pywikibot.data import sparql
 
 
+SCRIPT_DIR = path.dirname(path.realpath(__file__))
+
 SVG_NS = {"svg": "http://www.w3.org/2000/svg"}
 parser = ET.XMLParser(strip_cdata=False)
 
@@ -373,14 +375,26 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
             "/svg:svg/svg:defs/svg:g[@id='jic-defs']/svg:svg/svg:defs",
             namespaces=SVG_NS,
         ):
-            raise Exception("Unexpected nested svg for defs.")
+            print("Warning: Unexpected nested svg for defs.")
+            # raise Exception("Unexpected nested svg for defs.")
 
-        for el in root.findall(".//g/g[contains(@class,'Edge')]/g"):
-            raise Exception("Unexpected nested g element for edge.")
-        for el in root.findall(".//g/g[contains(@class,'Edge')]/path/@style"):
-            raise Exception("Unexpected style attribute on path element for edge.")
+        # TODO: why doesn't this work? for el in root.findall(".//g/g[contains(@class,'Edge')]/g"):
+        for el in root.xpath(
+            ".//svg:g/svg:g[contains(@class,'Edge')]/svg:g", namespaces=SVG_NS
+        ):
+            print("Warning: Unexpected nested g element for edge.")
+            # raise Exception("Unexpected nested g element for edge.")
+
+        # TODO: why doesn't this work? for el in root.findall(".//g/g[contains(@class,'Edge')]/path/@style"):
+        for el in root.xpath(
+            ".//svg:g/svg:g[contains(@class,'Edge')]/svg:path/@style", namespaces=SVG_NS
+        ):
+            print("Warning: Unexpected style attribute on path element for edge.")
+            # raise Exception("Unexpected style attribute on path element for edge.")
+
         for el in root.findall(".//defs/g[@id='jic-defs']/svg/defs"):
-            raise Exception("Unexpected nested svg for defs.")
+            print("Warning: Unexpected nested svg for defs.")
+            # raise Exception("Unexpected nested svg for defs.")
 
         # TODO: do the attributes "filter" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"
         # on the top-level g element apply to the g elements for edges?
@@ -412,6 +426,34 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
         #     and Arial can be seen as de-facto standard for such a feature.
 
         tree.write(path_out)
+
+        style_selector = (
+            "[@style='color:inherit;fill:inherit;fill-opacity:inherit;stroke:inherit;stroke-width:inherit']"
+        )
+        for el_parent in root.findall(f".//*{style_selector}/.."):
+            stroke_width = el_parent.attrib.get("stroke-width", 1)
+            for el in root.findall(f".//*{style_selector}"):
+                el.set(
+                    "style",
+                    f"color:inherit;fill:inherit;fill-opacity:inherit;stroke:inherit;stroke-width:{str(stroke_width)}",
+                )
+
+        for el in root.findall(".//*[@filter='url(#kaavioblackto000000filter)']"):
+            el.attrib.pop("filter", None)
+
+        for image_parent in root.findall(".//*image/.."):
+            images = image_parent.findall("image")
+            for image in images:
+                image_parent.remove(image)
+
+        pre_svgo_svg_f = f"{dir_out}/{stub_out}.pre_svgo.svg"
+        tree.write(pre_svgo_svg_f)
+
+        tree.write(path_out)
+        args = shlex.split(
+            f'svgo --multipass --config "{SCRIPT_DIR}/svgo-config.json" {path_out}'
+        )
+        subprocess.run(args)
 
         # TODO convert the following sh script to Python
         """
