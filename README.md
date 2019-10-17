@@ -10,8 +10,9 @@ Now you can start developing and testing files like `./gpml2svg/convert.py`.
 
 ## Sync mynixpkgs
 
-You probably don't need to worry about this. But if for some reason you want to sync the `mynixpkgs` subtree repo:
+The following is safe to ignore. To sync the `mynixpkgs` subtree repo, run:
 ```
+git remote add mynixpkgs git@github.com:ariutta/mynixpkgs.git # if not done already
 git subtree pull --prefix mynixpkgs mynixpkgs master --squash
 git subtree push --prefix mynixpkgs mynixpkgs master
 ```
