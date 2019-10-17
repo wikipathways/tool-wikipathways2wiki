@@ -13,6 +13,8 @@ in common ++ [
   # and in the pkg for my custom vim?
   pkgs.nodePackages.prettier
   pkgs.nodePackages.typescript
+#  pkgs.nodePackages.webpack
+#  pkgs.nodePackages.webpack-cli
 
   custom.depcheck
 

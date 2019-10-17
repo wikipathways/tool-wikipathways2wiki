@@ -21,13 +21,13 @@ pkgs.mkShell {
     pkgs.binutils-unwrapped # provides ar
   ]);
   shellHook = ''
-    if [ ! -f "$SSL_CERT_FILE" ]; then
-      candidate_ssl_cert_file="/etc/ssl/certs/ca-bundle.crt"
-      if [ -f "$candidate_ssl_cert_file" ]; then
-        export SSL_CERT_FILE="$candidate_ssl_cert_file"
-      else
-        echo "Cannot find a valid SSL certificate file. curl will not work." 1>&2
-      fi
-    fi
+#    if [ ! -f "$SSL_CERT_FILE" ]; then
+#      candidate_ssl_cert_file="/etc/ssl/certs/ca-bundle.crt"
+#      if [ -f "$candidate_ssl_cert_file" ]; then
+#        export SSL_CERT_FILE="$candidate_ssl_cert_file"
+#      else
+#        echo "Cannot find a valid SSL certificate file. curl will not work." 1>&2
+#      fi
+#    fi
   '';
 }
