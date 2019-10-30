@@ -341,8 +341,7 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
         # https://www.mediawiki.org/wiki/Manual:Coding_conventions/SVG
         # https://commons.wikimedia.org/wiki/Help:SVG
         # https://commons.wikimedia.org/wiki/Commons:Commons_SVG_Checker?withJS=MediaWiki:CommonsSvgChecker.js
-        # The W3 validator might be outdated. It doesn't allow for RDFa attributes.
-        # http://validator.w3.org/#validate_by_upload+with_options
+        # W3 validator: http://validator.w3.org/#validate_by_upload+with_options
 
         # WM says: "the recommended image height is around 400–600 pixels. When a
         #           user views the full size image, a width of 600–800 pixels gives
@@ -351,18 +350,19 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
         root.set("width", "800px")
         root.set("height", "600px")
 
+        # TODO: verify that all of the following cases are now correctly handled in pvjs
         for style_el in root.findall(".//style"):
-            print("style_el")
-            print(style_el)
             if not style_el.text == "":
                 raise Exception("Expected empty style sheets.")
         for el in root.findall(".//pattern[@id='PatternQ47512']"):
             raise Exception("Unexpected pattern.")
 
         for el in root.xpath(
-            "/svg:svg/svg:g/svg:g[contains(@class,'Edge')]/svg:g", namespaces=SVG_NS
+            ".//svg:g/svg:g[contains(@class,'Edge')]/svg:g", namespaces=SVG_NS
         ):
-            raise Exception("Unexpected nested g element for edge.")
+            print("Warning: Unexpected nested g element for edge.")
+            # raise Exception("Unexpected nested g element for edge.")
+
         for el in root.xpath(
             "/svg:svg/svg:g/svg:g[contains(@class,'Edge')]/svg:path/@style",
             namespaces=SVG_NS,
@@ -371,62 +371,23 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
                 "Unexpected style attribute on path element for edge.",
                 namespaces=SVG_NS,
             )
+
         for el in root.xpath(
             "/svg:svg/svg:defs/svg:g[@id='jic-defs']/svg:svg/svg:defs",
             namespaces=SVG_NS,
         ):
-            print("Warning: Unexpected nested svg for defs.")
-            # raise Exception("Unexpected nested svg for defs.")
+            raise Exception("Unexpected nested svg for defs.")
 
-        # TODO: why doesn't this work? for el in root.findall(".//g/g[contains(@class,'Edge')]/g"):
-        for el in root.xpath(
-            ".//svg:g/svg:g[contains(@class,'Edge')]/svg:g", namespaces=SVG_NS
-        ):
-            print("Warning: Unexpected nested g element for edge.")
-            # raise Exception("Unexpected nested g element for edge.")
+        for el in root.findall(".//defs/g[@id='jic-defs']/svg/defs"):
+            raise Exception("Unexpected nested svg for defs.")
 
         # TODO: why doesn't this work? for el in root.findall(".//g/g[contains(@class,'Edge')]/path/@style"):
         for el in root.xpath(
             ".//svg:g/svg:g[contains(@class,'Edge')]/svg:path/@style", namespaces=SVG_NS
         ):
-            print("Warning: Unexpected style attribute on path element for edge.")
-            # raise Exception("Unexpected style attribute on path element for edge.")
+            raise Exception("Unexpected style attribute on path element for edge.")
 
-        for el in root.findall(".//defs/g[@id='jic-defs']/svg/defs"):
-            print("Warning: Unexpected nested svg for defs.")
-            # raise Exception("Unexpected nested svg for defs.")
-
-        # TODO: do the attributes "filter" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"
-        # on the top-level g element apply to the g elements for edges?
-
-        # TODO: do the attributes "color" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"
-        # on the top-level g element apply to the path elements for edges?
-
-        # TODO: Which of the following is correct?
-        # To make the SVG file independent of Arial, change all occurrences of
-        #   font-family: Arial to font-family: 'Liberation Sans', Arial, sans-serif
-        #   https://commons.wikimedia.org/wiki/Help:SVG#fallback
-        # vs.
-        # Phab:T64987, Phab:T184369, Gnome #95; font-family="'font name'"
-        #   (internally quoted font family name) does not work
-        #   (File:Mathematical_implication_diagram-alt.svg, File:T184369.svg)
-        #   https://commons.wikimedia.org/wiki/Commons:Commons_SVG_Checker?withJS=MediaWiki:CommonsSvgChecker.js
-
-        # The kerning for Liberation Sans has some issues, at least when run through librsvg.
-        # Liberation Sans is the open replacement for Arial, but DejaVu Sans with transform="scale(0.92,0.98)"
-        # might have better kerning while taking up about the same amount of space.
-
-        # Long-term, should we switch our default font from Arial to something prettier?
-        # It would have to be a well-supported font.
-        # This page <https://commons.wikimedia.org/wiki/Help:SVG#fallback> says:
-        #     On Commons, librsvg has the fonts listed in:
-        #     https://meta.wikimedia.org/wiki/SVG_fonts#Latin_(basic)_fonts_comparison
-        #     ...
-        #     In graphic illustrations metric exact text elements are often important
-        #     and Arial can be seen as de-facto standard for such a feature.
-
-        tree.write(path_out)
-
+        # TODO: should any of this be in pvjs instead?
         style_selector = (
             "[@style='color:inherit;fill:inherit;fill-opacity:inherit;stroke:inherit;stroke-width:inherit']"
         )
@@ -446,16 +407,38 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
             for image in images:
                 image_parent.remove(image)
 
-        pre_svgo_svg_f = f"{dir_out}/{stub_out}.pre_svgo.svg"
-        tree.write(pre_svgo_svg_f)
+        # TODO: do the attributes "filter" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"
+        # on the top-level g element apply to the g elements for edges?
 
-        tree.write(path_out)
-        args = shlex.split(
-            f'svgo --multipass --config "{SCRIPT_DIR}/svgo-config.json" {path_out}'
-        )
-        subprocess.run(args)
+        # TODO: do the attributes "color" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"
+        # on the top-level g element apply to the path elements for edges?
 
-        # TODO convert the following sh script to Python
+        # TODO: Which of the following is correct?
+        # To make the SVG file independent of Arial, change all occurrences of
+        #   font-family: Arial to font-family: 'Liberation Sans', Arial, sans-serif
+        #   https://commons.wikimedia.org/wiki/Help:SVG#fallback
+        # vs.
+        # Phab:T64987, Phab:T184369, Gnome #95; font-family="'font name'"
+        #   (internally quoted font family name) does not work
+        #   (File:Mathematical_implication_diagram-alt.svg, File:T184369.svg)
+        #   https://commons.wikimedia.org/wiki/Commons:Commons_SVG_Checker?withJS=MediaWiki:CommonsSvgChecker.js
+
+        # Liberation Sans is the open replacement for Arial, but its kerning
+        # has some issues, at least as processed by librsvg.
+        # An alternative that is also supported MW is DejaVu Sans. Using
+        #   transform="scale(0.92,0.98)"
+        # might yield better kerning and take up about the same amount of space.
+
+        # Long-term, should we switch our default font from Arial to something prettier?
+        # It would have to be a well-supported font.
+        # This page <https://commons.wikimedia.org/wiki/Help:SVG#fallback> says:
+        #     On Commons, librsvg has the fonts listed in:
+        #     https://meta.wikimedia.org/wiki/SVG_fonts#Latin_(basic)_fonts_comparison
+        #     ...
+        #     In graphic illustrations metric exact text elements are often important
+        #     and Arial can be seen as de-facto standard for such a feature.
+
+        # TODO: convert the following sh script to Python (or do this in pvjs)
         """
         xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
                 -u "//*[contains(@font-family,'Arial')]/@font-family" \
@@ -501,7 +484,7 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
                 "$path_out";
         done
 
-        # Linkify
+        # Add link outs
         path_out_tmp="$path_out.tmp.svg"
         cp "$path_out" "$path_out_tmp"
         el_count=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "count(/svg:svg/svg:g//*[@class])" "$path_out_tmp")
@@ -667,7 +650,20 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
               -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Text')]/@fill" \
               -v "black" \
               "$path_out_dark_svg"
-      """
+        """
+
+        ###########
+        # Run SVGO
+        ###########
+
+        pre_svgo_svg_f = f"{dir_out}/{stub_out}.pre_svgo.svg"
+        tree.write(pre_svgo_svg_f)
+
+        tree.write(path_out)
+        args = shlex.split(
+            f'svgo --multipass --config "{SCRIPT_DIR}/svgo-config.json" {path_out}'
+        )
+        subprocess.run(args)
 
     #########################################
     # Future enhancements for pretty version

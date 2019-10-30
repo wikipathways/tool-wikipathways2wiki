@@ -30,6 +30,8 @@ in
     custom.svgo
 
     pkgs.coreutils
+
+    pkgs.libxml2 # for xmllint
   ] ++ (if stdenv.isDarwin then [
 
   ] else [
