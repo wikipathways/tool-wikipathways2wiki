@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
 
-# python3 gpml2svg/convert.py ~/Documents/WP4542/WP4542_103412.gpml ./hey.json
-# python3 gpml2svg/convert.py ~/Documents/WP4542/WP4542_103412.gpml ./WP4542_103412.json
-# python3 gpml2svg/convert.py ~/Documents/WP4542/WP4542_103412.gpml ./WP4542_103412.svg
-
 # import xml.etree.ElementTree as ET
 import argparse
 import csv
@@ -213,457 +209,253 @@ SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
                 json.dump(pathway_data, f_out)
 
 
-def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
-    """Convert from GPML to another format like SVG.
+def convert2svg(
+    path_in, path_out, pathway_iri, wp_id, pathway_version, dir_out, stub_out, wd_sparql
+):
+    """Convert from GPML to SVG.
 
     Keyword arguments:
     path_in -- path in, e.g., ./WP4542_103412.gpml
     path_out -- path out, e.g., ./WP4542_103412.svg
     pathway_iri -- e.g., http://identifiers.org/wikipathways/WP4542
+    wp_id -- e.g., WP4542
     pathway_version -- e.g., 103412
-    scale -- scale to use when converting to PNG (default 100)"""
-    if not path.exists(path_in):
-        raise Exception(f"Missing file '{path_in}'")
+    dir_out -- directory out
+    stub_out -- filename w/out extension
+    wd_sparql -- wikidata object for making queries
+    """
 
-    if path.exists(path_out):
-        print(f"File {path_out} already exists. Skipping.")
-        return True
+    stub_out_components = stub_out.split(".")
+    bare_stub_out = stub_out_components.pop(0)
+    extra_exts_out = stub_out_components
 
-    dir_in = path.dirname(path_in)
-    base_in = path.basename(path_in)
-    # base_in example: 'WP4542.gpml'
-    [stub_in, ext_in_with_dot] = path.splitext(base_in)
-    # get rid of the leading dot, e.g., '.gpml' to 'gpml'
-    ext_in = LEADING_DOT_RE.sub("", ext_in_with_dot)
+    extra_exts_out_count = len(extra_exts_out)
+    # For now, assume no inputs specify plain or dark
+    if extra_exts_out_count == 0:
+        theme = "plain"
+    elif extra_exts_out_count == 1:
+        theme = extra_exts_out[0]
+    else:
+        raise Exception(
+            f"Expected extra_exts_out_count of 0 or 1. Got {str(extra_exts_out_count)}."
+        )
 
-    if ext_in != "gpml":
-        # TODO: how about *.gpml.xml?
-        raise Exception(f"Currently only accepting *.gpml for path_in")
-    # gpml_f = f"{dir_in}/{stub_in}.gpml"
-    gpml_f = path_in
+    json_f = f"{dir_out}/{bare_stub_out}.json"
+    convert2json(
+        path_in,
+        json_f,
+        pathway_iri,
+        wp_id,
+        pathway_version,
+        dir_out,
+        bare_stub_out,
+        wd_sparql,
+    )
 
-    dir_out = path.dirname(path_out)
-    # base_out example: 'WP4542.svg'
-    base_out = path.basename(path_out)
-    [stub_out, ext_out_with_dot] = path.splitext(base_out)
-    # get rid of the leading dot, e.g., '.svg' to 'svg'
-    ext_out = LEADING_DOT_RE.sub("", ext_out_with_dot)
+    pvjs_cmd = f"pvjs --theme {theme}"
+    with open(json_f, "r") as f_in:
+        with open(path_out, "w") as f_out:
+            pvjs_ps = subprocess.Popen(
+                shlex.split(pvjs_cmd), stdin=f_in, stdout=f_out, shell=False
+            )
+            pvjs_ps.communicate()[0]
 
-    # ns = {"gpml": "http://pathvisio.org/GPML/2013a"}
-    # ET.register_namespace(None, ns["gpml"])
-
-    tree = ET.parse(gpml_f, parser=parser)
+    tree = ET.parse(path_out, parser=parser)
     root = tree.getroot()
 
-    if root is None:
-        raise Exception("no root element")
-    if root.tag is None:
-        raise Exception("no root tag")
+    #############################
+    # SVG > .svg
+    #############################
 
-    gpml_version = re.sub(r"{http://pathvisio.org/GPML/(\w+)}Pathway", r"\1", root.tag)
-    if ext_out != "gpml" and gpml_version != LATEST_GPML_VERSION:
-        old_f = f"{dir_in}/{stub_in}.{gpml_version}.gpml"
-        rename(gpml_f, old_f)
-        convert(old_f, gpml_f, pathway_iri, wp_id, pathway_version, scale)
-        # subprocess.run(shlex.split(f"pathvisio convert {old_f} {gpml_f}"))
+    # TODO: make the stand-alone SVGs work for upload to WM Commons:
+    # https://www.mediawiki.org/wiki/Manual:Coding_conventions/SVG
+    # https://commons.wikimedia.org/wiki/Help:SVG
+    # https://commons.wikimedia.org/wiki/Commons:Commons_SVG_Checker?withJS=MediaWiki:CommonsSvgChecker.js
+    # W3 validator: http://validator.w3.org/#validate_by_upload+with_options
 
-    # trying to get wd ids via sparql via pywikibot
-    site = pywikibot.Site("wikidata", "wikidata")
-    repo = site.data_repository()  # this is a DataSite object
-    wd_sparql = sparql.SparqlQuery(
-        endpoint="https://query.wikidata.org/sparql", repo=repo
+    # WM says: "the recommended image height is around 400–600 pixels. When a
+    #           user views the full size image, a width of 600–800 pixels gives
+    #           them a good close-up view"
+    # https://commons.wikimedia.org/wiki/Help:SVG#Frequently_asked_questions
+    root.set("width", "800px")
+    root.set("height", "600px")
+
+    # TODO: verify that all of the following cases are now correctly handled in pvjs
+    for style_el in root.findall(".//style"):
+        if not style_el.text == "":
+            raise Exception("Expected empty style sheets.")
+    for el in root.findall(".//pattern[@id='PatternQ47512']"):
+        raise Exception("Unexpected pattern.")
+
+    for el in root.xpath(
+        ".//svg:g/svg:g[contains(@class,'Edge')]/svg:g", namespaces=SVG_NS
+    ):
+        print("Warning: Unexpected nested g element for edge.")
+        # raise Exception("Unexpected nested g element for edge.")
+
+    for el in root.xpath(
+        "/svg:svg/svg:g/svg:g[contains(@class,'Edge')]/svg:path/@style",
+        namespaces=SVG_NS,
+    ):
+        raise Exception(
+            "Unexpected style attribute on path element for edge.", namespaces=SVG_NS
+        )
+
+    for el in root.xpath(
+        "/svg:svg/svg:defs/svg:g[@id='jic-defs']/svg:svg/svg:defs", namespaces=SVG_NS
+    ):
+        raise Exception("Unexpected nested svg for defs.")
+
+    for el in root.findall(".//defs/g[@id='jic-defs']/svg/defs"):
+        raise Exception("Unexpected nested svg for defs.")
+
+    for el in root.xpath(
+        ".//svg:g/svg:g[contains(@class,'Edge')]/svg:path/@style", namespaces=SVG_NS
+    ):
+        raise Exception("Unexpected style attribute on path element for edge.")
+
+    # TODO: should any of this be in pvjs instead?
+    style_selector = (
+        "[@style='color:inherit;fill:inherit;fill-opacity:inherit;stroke:inherit;stroke-width:inherit']"
     )
-    # (self, endpoint=None, entity_url=None, repo=None, 2 max_retries=None, retry_wait=None)
-
-    if ext_out in ["gpml", "owl", "pdf", "pwf", "txt"]:
-        subprocess.run(shlex.split(f"pathvisio convert {path_in} {path_out}"))
-    elif ext_out == "png":
-        # TODO: look at using --scale as an option (instead of an argument),
-        #       for both pathvisio and gpmlconverter.
-        # TODO: move the setting of a default value for scale into
-        # pathvisio instead of here.
-        subprocess.run(shlex.split(f"pathvisio convert {path_in} {path_out} {scale}"))
-        # Use interlacing? See https://github.com/PathVisio/pathvisio/issues/78
-        # It's probably not worthwhile. If we did it, we would need to install
-        # imagemagick and then run this:
-        #     mv "$path_out" "$path_out.noninterlaced.png"
-        #     convert -interlace PNG "$path_out.noninterlaced.png" "$path_out"
-    elif ext_out in ["json", "jsonld"]:
-        convert2json(
-            path_in,
-            path_out,
-            pathway_iri,
-            wp_id,
-            pathway_version,
-            dir_out,
-            stub_out,
-            wd_sparql,
-        )
-    elif ext_out in ["svg", "pvjssvg"]:
-        #############################
-        # SVG
-        #############################
-        stub_out_components = stub_out.split(".")
-        bare_stub_out = stub_out_components.pop()
-        extra_exts_out = stub_out_components
-        theme = "plain"
-        #        # For now, assume no inputs specify plain or dark
-        #        if len(extra_exts_out) > 0:
-        #            theme = extra_exts_out[0]
-        json_f = f"{dir_out}/{bare_stub_out}.json"
-        convert2json(
-            path_in,
-            json_f,
-            pathway_iri,
-            wp_id,
-            pathway_version,
-            dir_out,
-            stub_out,
-            wd_sparql,
-        )
-
-        pvjs_cmd = "pvjs"
-        with open(json_f, "r") as f_in:
-            with open(path_out, "w") as f_out:
-                pvjs_ps = subprocess.Popen(
-                    shlex.split(pvjs_cmd), stdin=f_in, stdout=f_out, shell=False
-                )
-                pvjs_ps.communicate()[0]
-
-        tree = ET.parse(path_out, parser=parser)
-        root = tree.getroot()
-
-        #############################
-        # SVG > .svg
-        #############################
-
-        # TODO: make the stand-alone SVGs work for upload to WM Commons:
-        # https://www.mediawiki.org/wiki/Manual:Coding_conventions/SVG
-        # https://commons.wikimedia.org/wiki/Help:SVG
-        # https://commons.wikimedia.org/wiki/Commons:Commons_SVG_Checker?withJS=MediaWiki:CommonsSvgChecker.js
-        # W3 validator: http://validator.w3.org/#validate_by_upload+with_options
-
-        # WM says: "the recommended image height is around 400–600 pixels. When a
-        #           user views the full size image, a width of 600–800 pixels gives
-        #           them a good close-up view"
-        # https://commons.wikimedia.org/wiki/Help:SVG#Frequently_asked_questions
-        root.set("width", "800px")
-        root.set("height", "600px")
-
-        # TODO: verify that all of the following cases are now correctly handled in pvjs
-        for style_el in root.findall(".//style"):
-            if not style_el.text == "":
-                raise Exception("Expected empty style sheets.")
-        for el in root.findall(".//pattern[@id='PatternQ47512']"):
-            raise Exception("Unexpected pattern.")
-
-        for el in root.xpath(
-            ".//svg:g/svg:g[contains(@class,'Edge')]/svg:g", namespaces=SVG_NS
-        ):
-            print("Warning: Unexpected nested g element for edge.")
-            # raise Exception("Unexpected nested g element for edge.")
-
-        for el in root.xpath(
-            "/svg:svg/svg:g/svg:g[contains(@class,'Edge')]/svg:path/@style",
-            namespaces=SVG_NS,
-        ):
-            raise Exception(
-                "Unexpected style attribute on path element for edge.",
-                namespaces=SVG_NS,
+    for el_parent in root.findall(f".//*{style_selector}/.."):
+        stroke_width = el_parent.attrib.get("stroke-width", 1)
+        for el in root.findall(f".//*{style_selector}"):
+            el.set(
+                "style",
+                f"color:inherit;fill:inherit;fill-opacity:inherit;stroke:inherit;stroke-width:{str(stroke_width)}",
             )
 
-        for el in root.xpath(
-            "/svg:svg/svg:defs/svg:g[@id='jic-defs']/svg:svg/svg:defs",
-            namespaces=SVG_NS,
-        ):
-            raise Exception("Unexpected nested svg for defs.")
+    for el in root.findall(".//*[@filter='url(#kaavioblackto000000filter)']"):
+        el.attrib.pop("filter", None)
 
-        for el in root.findall(".//defs/g[@id='jic-defs']/svg/defs"):
-            raise Exception("Unexpected nested svg for defs.")
+    for image_parent in root.findall(".//*image/.."):
+        images = image_parent.findall("image")
+        for image in images:
+            image_parent.remove(image)
 
-        # TODO: why doesn't this work? for el in root.findall(".//g/g[contains(@class,'Edge')]/path/@style"):
-        for el in root.xpath(
-            ".//svg:g/svg:g[contains(@class,'Edge')]/svg:path/@style", namespaces=SVG_NS
-        ):
-            raise Exception("Unexpected style attribute on path element for edge.")
+    # TODO: do the attributes "filter" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"
+    # on the top-level g element apply to the g elements for edges?
 
-        # TODO: should any of this be in pvjs instead?
-        style_selector = (
-            "[@style='color:inherit;fill:inherit;fill-opacity:inherit;stroke:inherit;stroke-width:inherit']"
+    # TODO: do the attributes "color" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"
+    # on the top-level g element apply to the path elements for edges?
+
+    # TODO: Which of the following is correct?
+    # To make the SVG file independent of Arial, change all occurrences of
+    #   font-family: Arial to font-family: 'Liberation Sans', Arial, sans-serif
+    #   https://commons.wikimedia.org/wiki/Help:SVG#fallback
+    # vs.
+    # Phab:T64987, Phab:T184369, Gnome #95; font-family="'font name'"
+    #   (internally quoted font family name) does not work
+    #   (File:Mathematical_implication_diagram-alt.svg, File:T184369.svg)
+    #   https://commons.wikimedia.org/wiki/Commons:Commons_SVG_Checker?withJS=MediaWiki:CommonsSvgChecker.js
+
+    # Liberation Sans is the open replacement for Arial, but its kerning
+    # has some issues, at least as processed by librsvg.
+    # An alternative that is also supported MW is DejaVu Sans. Using
+    #   transform="scale(0.92,0.98)"
+    # might yield better kerning and take up about the same amount of space.
+
+    # Long-term, should we switch our default font from Arial to something prettier?
+    # It would have to be a well-supported font.
+    # This page <https://commons.wikimedia.org/wiki/Help:SVG#fallback> says:
+    #     On Commons, librsvg has the fonts listed in:
+    #     https://meta.wikimedia.org/wiki/SVG_fonts#Latin_(basic)_fonts_comparison
+    #     ...
+    #     In graphic illustrations metric exact text elements are often important
+    #     and Arial can be seen as de-facto standard for such a feature.
+
+    for el in root.xpath(".//*[contains(@font-family,'Arial')]", namespaces=SVG_NS):
+        el.set("font-family", "'Liberation Sans', Arial, sans-serif")
+
+    #        for el in root.xpath(
+    #            ".//svg:defs//svg:marker//svg:polygon[not(@fill)]", namespaces=SVG_NS
+    #        ):
+    #            el.set("fill", "currentColor")
+
+    for el in root.xpath(".//svg:defs//svg:marker//*[not(@fill)]", namespaces=SVG_NS):
+        el.set("fill", "currentColor")
+
+    for el in root.xpath(".//svg:text[@stroke-width='0.05px']", namespaces=SVG_NS):
+        el.attrib.pop("stroke-width", None)
+
+    for el in root.xpath(".//svg:text[@overflow]", namespaces=SVG_NS):
+        el.attrib.pop("overflow", None)
+
+    for el in root.xpath(".//svg:text[@dominant-baseline]", namespaces=SVG_NS):
+        el.attrib.pop("dominant-baseline", None)
+
+    for el in root.xpath(".//svg:text[@clip-path]", namespaces=SVG_NS):
+        el.attrib.pop("clip-path", None)
+
+    FONT_SIZE_RE = re.compile(r"^([0-9.]*)px$")
+    # TRANSLATE_RE = re.compile(r"^translate[(]([0-9.]*),([0-9.]*)[)]$")
+    TRANSLATE_RE = re.compile(r"^translate\(([0-9.]*),([0-9.]*)\)$")
+    # We are pushing the text down based on font size.
+    # This is needed because librsvg doesn't support attribute "alignment-baseline".
+
+    for el in root.xpath(".//svg:text[@font-size]", namespaces=SVG_NS):
+        font_size_full = el.attrib.get("font-size")
+        font_size_matches = re.search(FONT_SIZE_RE, font_size_full)
+        if font_size_matches:
+            font_size = float(font_size_matches.group(1))
+
+        if not font_size:
+            font_size = 5
+
+        transform_full = el.attrib.get("transform")
+        if transform_full:
+            translate_matches = re.search(TRANSLATE_RE, transform_full)
+            if translate_matches:
+                x_translation = float(translate_matches.group(1))
+                y_translation_uncorrected = float(translate_matches.group(1))
+
+        if not x_translation:
+            x_translation = 0
+            y_translation_uncorrected = 0
+
+        y_translation_corrected = font_size / 3 + y_translation_uncorrected
+        el.set("transform", f"translate({x_translation},{y_translation_corrected})")
+
+    # Add link outs
+
+    WIKIDATA_CLASS_RE = re.compile("Wikidata_Q[0-9]+")
+    for el in root.xpath(".//*[contains(@class,'DataNode')]", namespaces=SVG_NS):
+        # classes = [ c for c in el.attrib.get("class").split(" ") ]
+        wikidata_classes = list(
+            filter(WIKIDATA_CLASS_RE.match, el.attrib.get("class").split(" "))
         )
-        for el_parent in root.findall(f".//*{style_selector}/.."):
-            stroke_width = el_parent.attrib.get("stroke-width", 1)
-            for el in root.findall(f".//*{style_selector}"):
-                el.set(
-                    "style",
-                    f"color:inherit;fill:inherit;fill-opacity:inherit;stroke:inherit;stroke-width:{str(stroke_width)}",
-                )
+        if len(wikidata_classes) > 0:
+            # if there are multiple, we just link out to the first
+            wikidata_id = wikidata_classes[0].replace("Wikidata_", "")
+            el.tag = "{http://www.w3.org/2000/svg}a"
+            # linkout_base = "https://www.wikidata.org/wiki/"
+            linkout_base = "https://tools.wmflabs.org/scholia/"
+            el.set("{http://www.w3.org/1999/xlink}href", linkout_base + wikidata_id)
 
-        for el in root.findall(".//*[@filter='url(#kaavioblackto000000filter)']"):
-            el.attrib.pop("filter", None)
+            # make linkout open in new tab/window
+            el.set("target", "_blank")
 
-        for image_parent in root.findall(".//*image/.."):
-            images = image_parent.findall("image")
-            for image in images:
-                image_parent.remove(image)
+        # print(ET.tostring(el, pretty_print=True))
+        # el.set("font-family", "'Liberation Sans', Arial, sans-serif")
 
-        # TODO: do the attributes "filter" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"
-        # on the top-level g element apply to the g elements for edges?
+    ###########
+    # Run SVGO
+    ###########
 
-        # TODO: do the attributes "color" "fill" "fill-opacity" "stroke" "stroke-dasharray" "stroke-width"
-        # on the top-level g element apply to the path elements for edges?
+    pre_svgo_svg_f = f"{dir_out}/{stub_out}.pre_svgo.svg"
+    tree.write(pre_svgo_svg_f)
 
-        # TODO: Which of the following is correct?
-        # To make the SVG file independent of Arial, change all occurrences of
-        #   font-family: Arial to font-family: 'Liberation Sans', Arial, sans-serif
-        #   https://commons.wikimedia.org/wiki/Help:SVG#fallback
-        # vs.
-        # Phab:T64987, Phab:T184369, Gnome #95; font-family="'font name'"
-        #   (internally quoted font family name) does not work
-        #   (File:Mathematical_implication_diagram-alt.svg, File:T184369.svg)
-        #   https://commons.wikimedia.org/wiki/Commons:Commons_SVG_Checker?withJS=MediaWiki:CommonsSvgChecker.js
+    tree.write(path_out)
+    args = shlex.split(
+        f'svgo --multipass --config "{SCRIPT_DIR}/svgo-config.json" {path_out}'
+    )
+    subprocess.run(args)
 
-        # Liberation Sans is the open replacement for Arial, but its kerning
-        # has some issues, at least as processed by librsvg.
-        # An alternative that is also supported MW is DejaVu Sans. Using
-        #   transform="scale(0.92,0.98)"
-        # might yield better kerning and take up about the same amount of space.
-
-        # Long-term, should we switch our default font from Arial to something prettier?
-        # It would have to be a well-supported font.
-        # This page <https://commons.wikimedia.org/wiki/Help:SVG#fallback> says:
-        #     On Commons, librsvg has the fonts listed in:
-        #     https://meta.wikimedia.org/wiki/SVG_fonts#Latin_(basic)_fonts_comparison
-        #     ...
-        #     In graphic illustrations metric exact text elements are often important
-        #     and Arial can be seen as de-facto standard for such a feature.
-
-        # TODO: convert the following sh script to Python (or do this in pvjs)
-        """
-        xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                -u "//*[contains(@font-family,'Arial')]/@font-family" \
-                -v "'Liberation Sans', Arial, sans-serif" \
-                "$path_out"
-        xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                -u "//*[contains(@font-family,'arial')]/@font-family" \
-                -v "'Liberation Sans', Arial, sans-serif" \
-                "$path_out"
-
-        xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                -i "/svg:svg/svg:defs/svg:g/svg:marker/svg:path[not(@fill)]" -t attr -n "fill" -v "REPLACE_ME" \
-                -u "/svg:svg/svg:defs/svg:g/svg:marker/svg:path[@fill='REPLACE_ME']/@fill" \
-                -v "currentColor" \
-                "$path_out"
-
-    #  		  -u "/svg:svg/@color" \
-    #		  -v "black" \
-    #		  -u "/svg:svg/svg:g/@color" \
-    #		  -v "black" \
-        xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-        -u "/svg:svg/svg:g//svg:text[@stroke-width='0.05px']/@stroke-width" \
-        -v "0px" \
-        -d "/svg:svg/svg:g//*/svg:text/@overflow" \
-        -d "/svg:svg/svg:g//*/svg:text/@dominant-baseline" \
-        -d "/svg:svg/svg:g//*/svg:text/@clip-path" \
-        -d "/svg:svg/svg:g//svg:defs" \
-        -d "/svg:svg/svg:g//svg:text[@stroke-width='0.05px']/@stroke-width" \
-        "$path_out";
-
-        # We are pushing the text down based on font size.
-        # This is needed because librsvg doesn't support attribute "alignment-baseline".
-        el_count=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "count(/svg:svg/svg:g//svg:text)" "$path_out")
-        for i in $(seq $el_count); do
-            font_size=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//svg:text)[$i]/@font-size" "$path_out" | sed 's/^\([0-9.]*\)px$/\1/g');
-          font_size=${font_size:-5}
-          x_translation=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//svg:text)[$i]/@transform" "$path_out" | sed 's/^translate[(]\([0-9.]*\),\([0-9.]*\)[)]$/\1/g');
-          y_translation=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//svg:text)[$i]/@transform" "$path_out" | sed 's/^translate[(]\([0-9.]*\),\([0-9.]*\)[)]$/\2/g');
-          updated_y_translation=$(echo "$font_size / 3 + $y_translation" | bc)
-          xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                -u "(/svg:svg/svg:g//svg:text)[$i]/@transform" \
-                -v "translate($x_translation,$updated_y_translation)" \
-                "$path_out";
-        done
-
-        # Add link outs
-        path_out_tmp="$path_out.tmp.svg"
-        cp "$path_out" "$path_out_tmp"
-        el_count=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "count(/svg:svg/svg:g//*[@class])" "$path_out_tmp")
-        for i in $(seq $el_count); do
-            readarray -t wditems <<<$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t \
-                    -v "(/svg:svg/svg:g//*[@class])[$i]/@class" "$path_out_tmp" | \
-                awk '/Wikidata_Q[0-9]+/' | tr ' ' '\n' | awk '/Wikidata_Q[0-9]+/');
-        wditems_len="${#wditems[@]}"
-            if [[ wditems_len -eq 1 ]]; then
-            wditem=${wditems[0]}
-            if [ ! -z $wditem ]; then
-
-                #wikidata_iri=$(echo "$wditem" | awk -F'_' '{print "https://www.wikidata.org/wiki/"$NF}')
-                scholia_iri=$(echo "$wditem" | awk -F'_' '{print "https://tools.wmflabs.org/scholia/"$NF}')
-
-                xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                            -i "(/svg:svg/svg:g//*[@class])[$i]" \
-                            -t attr -n "xlink:href" \
-                            -v "$scholia_iri" \
-                            "$path_out_tmp";
-            
-                xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                            -i "(/svg:svg/svg:g//*[@class])[$i]" \
-                            -t attr -n "target" \
-                            -v "_blank" \
-                            "$path_out_tmp";
-            
-                xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                            -r "(/svg:svg/svg:g//*[@class])[$i]" \
-                            -v "a" \
-                            "$path_out_tmp";
-            fi
-            fi
-            
-        done
-        
-        mv "$path_out_tmp" "$path_out"
-
-        #############################
-        # SVG > .dark.svg
-        #############################
-        path_out_dark_svg="$dir_out/$bare_stub_out.dark.svg"
-
-        # Invert colors and filters
-      
-        cat "$path_out" | xmlstarlet ed -N svg='http://www.w3.org/2000/svg' \
-              -u "/svg:svg/@color" \
-              -v "white" \
-              -u "/svg:svg/svg:g/@color" \
-              -v "white" > \
-              "$path_out_dark_svg"
-
-        for attr in "color" "fill" "stroke"; do
-          el_count=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "count(/svg:svg/svg:g//*[@$attr])" "$path_out_dark_svg")
-          for i in $(seq $el_count); do
-            color=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//*[@$attr])[$i]/@$attr" "$path_out_dark_svg");
-            inverted_color=$(invert_color $color)
-            xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                      -u "(/svg:svg/svg:g//*[@$attr])[$i]/@$attr" \
-                  -v "$inverted_color" \
-                  "$path_out_dark_svg";
-          done
-        done
-
-        el_count=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "count(/svg:svg/svg:g//*[@filter])" "$path_out_dark_svg")
-        for i in $(seq $el_count); do
-          filter_value=$(xmlstarlet sel -N svg='http://www.w3.org/2000/svg' -t -v "(/svg:svg/svg:g//*[@filter])[$i]/@filter" "$path_out_dark_svg");
-          inverted_filter_value=$(invert_filter $filter_value)
-          xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-                -u "(/svg:svg/svg:g//*[@filter])[$i]/@filter" \
-                -v "$inverted_filter_value" \
-                "$path_out_dark_svg";
-        done
-      
-        # clip-path needed because rx and ry don't work in FF or Safari
-        xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
-              -u "/svg:svg/svg:g/svg:rect[contains(@class,'Icon')]/@fill" \
-              -v "#3d3d3d" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'Edge')]/svg:path/@stroke-width" \
-              -v "1.1px" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupGroup')]/*[contains(@class,'Icon')]/@fill" \
-              -v "transparent" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupGroup')]/*[contains(@class,'Icon')]/@stroke-width" \
-              -v "0px" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupComplex')]/*[contains(@class,'Icon')]/@fill" \
-              -v "#B4B464" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupComplex')]/*[contains(@class,'Icon')]/@fill-opacity" \
-              -v "0.1" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupComplex')]/*[contains(@class,'Icon')]/@stroke" \
-              -v "#808080" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupNone')]/*[contains(@class,'Icon')]/@fill" \
-              -v "#B4B464" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupNone')]/*[contains(@class,'Icon')]/@fill-opacity" \
-              -v "0.1" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupNone')]/*[contains(@class,'Icon')]/@stroke" \
-              -v "#808080" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupPathway')]/*[contains(@class,'Icon')]/@fill" \
-              -v "#008000" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupPathway')]/*[contains(@class,'Icon')]/@fill-opacity" \
-              -v "0.05" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'GroupPathway')]/*[contains(@class,'Icon')]/@stroke" \
-              -v "#808080" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'CellularComponent')]/*[contains(@class,'Icon')]/@color" \
-              -v "red" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'CellularComponent')]/*[contains(@class,'Icon')]/@fill" \
-              -v "pink" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'CellularComponent')]/*[contains(@class,'Icon')]/@fill-opacity" \
-              -v "0.05" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'CellularComponent')]/*[contains(@class,'Icon')]/@stroke" \
-              -v "orange" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'Label')]/*[contains(@class,'Icon')]/@color" \
-              -v "transparent" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'Label')]/*[contains(@class,'Icon')]/@fill" \
-              -v "none" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'Label')]/*[contains(@class,'Icon')]/@fill-opacity" \
-              -v "0" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'Label')]/*[contains(@class,'Icon')]/@stroke" \
-              -v "none" \
-              -i "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Icon')]" -t attr -n "clip-path" -v "url(#ClipPathRoundedRectangle)" \
-                      -i "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Icon')]" -t attr -n "rx" -v "15px" \
-                      -i "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Icon')]" -t attr -n "ry" -v "15px" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Icon')]/@stroke-width" \
-              -v "0px" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/*[contains(@class,'Text')]/@font-weight" \
-              -v "bold" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'GeneProduct')]/*[contains(@class,'Icon')]/@fill" \
-              -v "#f4d03f" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'GeneProduct')]/*[contains(@class,'Text')]/@fill" \
-              -v "#333" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Protein')]/*[contains(@class,'Icon')]/@fill" \
-              -v "brown" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Protein')]/*[contains(@class,'Text')]/@fill" \
-              -v "#FEFEFE" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Rna')]/*[contains(@class,'Icon')]/@fill" \
-              -v "#9453A7" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Rna')]/*[contains(@class,'Text')]/@fill" \
-              -v "#ECF0F1" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Icon')]/@xlink:href" \
-              -v "#Rectangle" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Icon')]/@fill" \
-              -v "#75C95C" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Icon')]/@fill-opacity" \
-              -v "1" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Text')]/@stroke" \
-              -v "transparent" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Text')]/@stroke-width" \
-              -v "0px" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Pathway')]/*[contains(@class,'Text')]/@fill" \
-              -v "#1C2833" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Metabolite')]/*[contains(@class,'Icon')]/@fill" \
-              -v "#0000EE" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode') and contains(@typeof, 'Metabolite')]/*[contains(@class,'Text')]/@fill" \
-              -v "#FEFEFE" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Icon')]/@fill" \
-              -v "#fefefe" \
-              -i "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Icon')]" \
-              -t attr -n "color" \
-              -v "gray" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Icon')]/@stroke" \
-              -v "gray" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Icon')]/@stroke-width" \
-              -v "1px" \
-              -u "/svg:svg/svg:g//svg:g[contains(@class,'DataNode')]/svg:g[contains(@typeof, 'State')]/*[contains(@class,'Text')]/@fill" \
-              -v "black" \
-              "$path_out_dark_svg"
-        """
-
-        ###########
-        # Run SVGO
-        ###########
-
-        pre_svgo_svg_f = f"{dir_out}/{stub_out}.pre_svgo.svg"
-        tree.write(pre_svgo_svg_f)
-
-        tree.write(path_out)
-        args = shlex.split(
-            f'svgo --multipass --config "{SCRIPT_DIR}/svgo-config.json" {path_out}'
-        )
-        subprocess.run(args)
+    #############################
+    # SVG > .dark.svg
+    #############################
+    # path_out_dark_svg="$dir_out/$bare_stub_out.dark.svg"
 
     #########################################
     # Future enhancements for pretty version
@@ -814,6 +606,121 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
     #        r /dev/stdin
     #        }' "$path_out" < <(xmlstarlet sel -t -c '/svg/defs/*' "$metabolite_patterns_svg_f")
     #            """
+
+
+def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
+    """Convert from GPML to another format like SVG.
+
+    Keyword arguments:
+    path_in -- path in, e.g., ./WP4542_103412.gpml
+    path_out -- path out, e.g., ./WP4542_103412.svg
+    pathway_iri -- e.g., http://identifiers.org/wikipathways/WP4542
+    pathway_version -- e.g., 103412
+    scale -- scale to use when converting to PNG (default 100)"""
+    if not path.exists(path_in):
+        raise Exception(f"Missing file '{path_in}'")
+
+    if path.exists(path_out):
+        print(f"File {path_out} already exists. Skipping.")
+        return True
+
+    dir_in = path.dirname(path_in)
+    base_in = path.basename(path_in)
+    # base_in example: 'WP4542.gpml'
+    [stub_in, ext_in_with_dot] = path.splitext(base_in)
+    # get rid of the leading dot, e.g., '.gpml' to 'gpml'
+    ext_in = LEADING_DOT_RE.sub("", ext_in_with_dot)
+
+    if ext_in != "gpml":
+        # TODO: how about *.gpml.xml?
+        raise Exception(f"Currently only accepting *.gpml for path_in")
+    # gpml_f = f"{dir_in}/{stub_in}.gpml"
+    gpml_f = path_in
+
+    dir_out = path.dirname(path_out)
+    # base_out example: 'WP4542.svg'
+    base_out = path.basename(path_out)
+    [stub_out, ext_out_with_dot] = path.splitext(base_out)
+    # get rid of the leading dot, e.g., '.svg' to 'svg'
+    ext_out = LEADING_DOT_RE.sub("", ext_out_with_dot)
+
+    # ns = {"gpml": "http://pathvisio.org/GPML/2013a"}
+    # ET.register_namespace(None, ns["gpml"])
+
+    tree = ET.parse(gpml_f, parser=parser)
+    root = tree.getroot()
+
+    if root is None:
+        raise Exception("no root element")
+    if root.tag is None:
+        raise Exception("no root tag")
+
+    gpml_version = re.sub(r"{http://pathvisio.org/GPML/(\w+)}Pathway", r"\1", root.tag)
+    if ext_out != "gpml" and gpml_version != LATEST_GPML_VERSION:
+        old_f = f"{dir_in}/{stub_in}.{gpml_version}.gpml"
+        rename(gpml_f, old_f)
+        convert(old_f, gpml_f, pathway_iri, wp_id, pathway_version, scale)
+        # subprocess.run(shlex.split(f"pathvisio convert {old_f} {gpml_f}"))
+
+    # trying to get wd ids via sparql via pywikibot
+    site = pywikibot.Site("wikidata", "wikidata")
+    repo = site.data_repository()  # this is a DataSite object
+    wd_sparql = sparql.SparqlQuery(
+        endpoint="https://query.wikidata.org/sparql", repo=repo
+    )
+    # (self, endpoint=None, entity_url=None, repo=None, 2 max_retries=None, retry_wait=None)
+
+    if ext_out in ["gpml", "owl", "pdf", "pwf", "txt"]:
+        subprocess.run(shlex.split(f"pathvisio convert {path_in} {path_out}"))
+    elif ext_out == "png":
+        # TODO: look at using --scale as an option (instead of an argument),
+        #       for both pathvisio and gpmlconverter.
+        # TODO: move the setting of a default value for scale into
+        # pathvisio instead of here.
+        subprocess.run(shlex.split(f"pathvisio convert {path_in} {path_out} {scale}"))
+        # Use interlacing? See https://github.com/PathVisio/pathvisio/issues/78
+        # It's probably not worthwhile. If we did it, we would need to install
+        # imagemagick and then run this:
+        #     mv "$path_out" "$path_out.noninterlaced.png"
+        #     convert -interlace PNG "$path_out.noninterlaced.png" "$path_out"
+    elif ext_out in ["json", "jsonld"]:
+        convert2json(
+            path_in,
+            path_out,
+            pathway_iri,
+            wp_id,
+            pathway_version,
+            dir_out,
+            stub_out,
+            wd_sparql,
+        )
+    elif ext_out in ["svg", "pvjssvg"]:
+        #############################
+        # SVG
+        #############################
+        convert2svg(
+            path_in,
+            path_out,
+            pathway_iri,
+            wp_id,
+            pathway_version,
+            dir_out,
+            stub_out,
+            wd_sparql,
+        )
+        # creating the dark version
+        pretty_theme = "dark"
+        convert2svg(
+            path_in,
+            # path_out
+            f"{dir_out}/{stub_out}.{pretty_theme}.svg",
+            pathway_iri,
+            wp_id,
+            pathway_version,
+            dir_out,
+            ".".join([stub_out, pretty_theme]),
+            wd_sparql,
+        )
     else:
         raise Exception(f"Invalid output extension: '{ext_out}'")
 

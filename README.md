@@ -16,6 +16,18 @@ Sample commands:
 rm WP4542_*.* && python3 gpml2svg/convert.py ~/Documents/WP4542/WP4542_104788.gpml ./WP4542_104788.svg && xmllint --pretty 1 WP4542_104788.svg > WP4542_104788.pretty1.svg && xmllint --pretty 2 WP4542_104788.svg > WP4542_104788.pretty2.svg
 ```
 
+```
+python3 gpml2svg/convert.py ~/Documents/WP4542/WP4542_103412.gpml ./hey.json
+```
+
+```
+python3 gpml2svg/convert.py ~/Documents/WP4542/WP4542_103412.gpml ./WP4542_103412.json
+```
+
+```
+python3 gpml2svg/convert.py ~/Documents/WP4542/WP4542_103412.gpml ./WP4542_103412.svg
+```
+
 ## Sync mynixpkgs
 
 The following is safe to ignore. To sync the `mynixpkgs` subtree repo, run:
