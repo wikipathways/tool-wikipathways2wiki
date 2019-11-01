@@ -408,7 +408,7 @@ def convert2svg(
             translate_matches = re.search(TRANSLATE_RE, transform_full)
             if translate_matches:
                 x_translation = float(translate_matches.group(1))
-                y_translation_uncorrected = float(translate_matches.group(1))
+                y_translation_uncorrected = float(translate_matches.group(2))
 
         if not x_translation:
             x_translation = 0
