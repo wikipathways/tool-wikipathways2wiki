@@ -112,22 +112,22 @@ let
         sha512 = "ogI4g9W5qIQQUhXAclq6zhqgqNUr7UlFaqDHbch7WLSLeeM/7d3CRaw7GLajxvyFvhJqw4Rpcz5bhoaYtIx6Tg==";
       };
     };
-    "@types/node-10.17.0" = {
+    "@types/node-10.17.3" = {
       name = "_at_types_slash_node";
       packageName = "@types/node";
-      version = "10.17.0";
+      version = "10.17.3";
       src = fetchurl {
-        url = "https://registry.npmjs.org/@types/node/-/node-10.17.0.tgz";
-        sha512 = "wuJwN2KV4tIRz1bu9vq5kSPasJ8IsEjZaP1ZR7KlmdUZvGF/rXy8DmXOVwUD0kAtvtJ7aqMKPqUXC0NUTDbrDg==";
+        url = "https://registry.npmjs.org/@types/node/-/node-10.17.3.tgz";
+        sha512 = "QZ9CjUB3QoA3f2afw3utKlfRPhpmufB7jC2+oDhLWnXqoyx333fhKSQDLQu2EK7OE0a15X67eYiRAaJsHXrpMA==";
       };
     };
-    "@types/node-12.12.0" = {
+    "@types/node-12.12.5" = {
       name = "_at_types_slash_node";
       packageName = "@types/node";
-      version = "12.12.0";
+      version = "12.12.5";
       src = fetchurl {
-        url = "https://registry.npmjs.org/@types/node/-/node-12.12.0.tgz";
-        sha512 = "6N8Sa5AaENRtJnpKXZgvc119PKxT1Lk9VPy4kfT8JF23tIe1qDfaGkBR2DRKJFIA7NptMz+fps//C6aLi1Uoug==";
+        url = "https://registry.npmjs.org/@types/node/-/node-12.12.5.tgz";
+        sha512 = "KEjODidV4XYUlJBF3XdjSH5FWoMCtO0utnhtdLf1AgeuZLOrRbvmU/gaRCVg7ZaQDjVf3l84egiY0mRNe5xE4A==";
       };
     };
     "@types/q-1.5.2" = {
@@ -714,15 +714,6 @@ let
         url = "git://github.com/vote539/dejavu-fonts-ttf.git";
         rev = "07c99a505e0e21928e55eb48c59b4de6dc7e03fb";
         sha256 = "606f253ff81ecc6392c5512f447aefc8c31a903047bd76e70a28c0f1b2165027";
-      };
-    };
-    "deprecate-1.1.1" = {
-      name = "deprecate";
-      packageName = "deprecate";
-      version = "1.1.1";
-      src = fetchurl {
-        url = "https://registry.npmjs.org/deprecate/-/deprecate-1.1.1.tgz";
-        sha512 = "ZGDXefq1xknT292LnorMY5s8UVU08/WKdzDZCUT6t9JzsiMSP4uzUhgpqugffNVcT5WC6wMBiSQ+LFjlv3v7iQ==";
       };
     };
     "deps-regex-0.1.4" = {
@@ -1371,6 +1362,15 @@ let
       src = fetchurl {
         url = "https://registry.npmjs.org/kaavio/-/kaavio-4.0.15.tgz";
         sha512 = "2wdhZn8ALiwsx3z+WhZJBZPmLPZuTQEH6KgTX68N7F2C+PHp3dtqMfKU9z0taXqdCS3678f4+J0ruCFbAZPaqQ==";
+      };
+    };
+    "kaavio-5.0.0" = {
+      name = "kaavio";
+      packageName = "kaavio";
+      version = "5.0.0";
+      src = fetchurl {
+        url = "https://registry.npmjs.org/kaavio/-/kaavio-5.0.0.tgz";
+        sha512 = "ka+V+vzp/rk5NP418H+jRWHzu4rVbVX6tzW36tzr+lT1nsMKHCAIfS1/TgzguVXV5u85m89c12Jb51DvcQqACQ==";
       };
     };
     "lerp-1.0.3" = {
@@ -2444,13 +2444,13 @@ let
         sha1 = "d9f60e1ef409051542b30f921207bc4497fed5ec";
       };
     };
-    "svgo-1.3.1" = {
+    "svgo-1.3.2" = {
       name = "svgo";
       packageName = "svgo";
-      version = "1.3.1";
+      version = "1.3.2";
       src = fetchurl {
-        url = "https://registry.npmjs.org/svgo/-/svgo-1.3.1.tgz";
-        sha512 = "2iv3AHKL+x2/nAvkg+vTv01aK94OFU6wTRbnv/K43mf1OdKEEA8xaQl7Wjs5Vrh9AlyXvyPd8fg6s6YzYdQTnQ==";
+        url = "https://registry.npmjs.org/svgo/-/svgo-1.3.2.tgz";
+        sha512 = "yhy/sQYxR5BkC98CY7o31VGsg014AKLEPxdfhora76l36hD9Rdy5NZA/Ocn6yayNPgSamYdtX2rFJdcv07AYVw==";
       };
     };
     "symbol-observable-1.0.1" = {
@@ -2795,13 +2795,13 @@ let
         sha512 = "r9S/ZyXu/Xu9q1tYlpsLIsa3EeLXXk0VwlxqTcFRfg9EhMW+17kbt9G0NrgCmhGb5vT2hyhJZLfDGx+7+5Uj/w==";
       };
     };
-    "yargs-14.2.0" = {
+    "yargs-14.2.1" = {
       name = "yargs";
       packageName = "yargs";
-      version = "14.2.0";
+      version = "14.2.1";
       src = fetchurl {
-        url = "https://registry.npmjs.org/yargs/-/yargs-14.2.0.tgz";
-        sha512 = "/is78VKbKs70bVZH7w4YaZea6xcJWOAwkhbR0CFuZBmYtfTYF0xjGJF43AYd8g2Uii1yJwmS5GR2vBmrc32sbg==";
+        url = "https://registry.npmjs.org/yargs/-/yargs-14.2.1.tgz";
+        sha512 = "rZ00XIuGAoI58F0weHyCP3PAN17wJqdN/pF8eMp+imuP+jSdMCD5t4bSf5d5FKPvEDrK9zYlnhO7bFYKQ5UYow==";
       };
     };
     "yargs-parser-15.0.0" = {
@@ -2819,10 +2819,10 @@ in
   depcheck = nodeEnv.buildNodePackage {
     name = "depcheck";
     packageName = "depcheck";
-    version = "0.8.4";
+    version = "0.9.0";
     src = fetchurl {
-      url = "https://registry.npmjs.org/depcheck/-/depcheck-0.8.4.tgz";
-      sha512 = "XMBCbyXtrQDcM9cYBM30R94siNy1fYdhv0KjF+ivjkJKK7w8RwVb5oviugvbr+opO7VGb7MZnLzEtMKZB0q9bQ==";
+      url = "https://registry.npmjs.org/depcheck/-/depcheck-0.9.0.tgz";
+      sha512 = "YdFTkVXUsW7z+b72iQFWjXEs4+7mtGp40WsX6FW5W33WajkDh/peXqYTp7ds6+NlosSLpo1mOMOBj3Xd8csbzQ==";
     };
     dependencies = [
       sources."@babel/code-frame-7.5.5"
@@ -2850,7 +2850,6 @@ in
       sources."de-indent-1.0.2"
       sources."debug-4.1.1"
       sources."decamelize-1.2.0"
-      sources."deprecate-1.1.1"
       sources."deps-regex-0.1.4"
       sources."emoji-regex-7.0.3"
       sources."escape-string-regexp-1.0.5"
@@ -2894,7 +2893,7 @@ in
       sources."which-module-2.0.0"
       sources."wrap-ansi-5.1.0"
       sources."y18n-4.0.0"
-      sources."yargs-14.2.0"
+      sources."yargs-14.2.1"
       sources."yargs-parser-15.0.0"
     ];
     buildInputs = globalBuildInputs;
@@ -2935,7 +2934,7 @@ in
     };
     dependencies = [
       sources."@types/lodash-4.14.144"
-      sources."@types/node-12.12.0"
+      sources."@types/node-12.12.5"
       sources."JSONStream-1.3.5"
       sources."ansi-escapes-3.2.0"
       sources."ansi-regex-3.0.0"
@@ -3044,7 +3043,7 @@ in
     dependencies = [
       sources."@types/bluebird-3.5.28"
       sources."@types/lodash-4.14.144"
-      sources."@types/node-10.17.0"
+      sources."@types/node-10.17.3"
       sources."@types/q-1.5.2"
       sources."@types/sax-1.2.0"
       sources."@wikipathways/cxml-0.2.14"
@@ -3282,7 +3281,7 @@ in
       sources."svg-arc-to-cubic-bezier-3.2.0"
       sources."svg-pan-zoom-3.6.1"
       sources."svg-points-6.0.1"
-      sources."svgo-1.3.1"
+      sources."svgo-1.3.2"
       sources."symbol-observable-1.0.1"
       (sources."table-layout-0.4.5" // {
         dependencies = [
@@ -3338,14 +3337,14 @@ in
   "@wikipathways/pvjs" = nodeEnv.buildNodePackage {
     name = "_at_wikipathways_slash_pvjs";
     packageName = "@wikipathways/pvjs";
-    version = "4.0.8";
+    version = "5.0.0";
     src = fetchurl {
-      url = "https://registry.npmjs.org/@wikipathways/pvjs/-/pvjs-4.0.8.tgz";
-      sha512 = "yOU6+Af7OuJ7pubUEmO2Vng8kaxAtkEiWhmtiO3fZwX3Pje7CST8OawjiZbjjW4G2v6CtHVUfI03GXTioyMYKg==";
+      url = "https://registry.npmjs.org/@wikipathways/pvjs/-/pvjs-5.0.0.tgz";
+      sha512 = "UGKxFfrLFfWO/ajTDIGshQyxBnlSWK/Bn0FHjfKgnwYtLqumiP9RpBpSZnZyCfCgxE5EZCDdQHhAcIJgLyGz6A==";
     };
     dependencies = [
       sources."@types/lodash-4.14.144"
-      sources."@types/node-12.12.0"
+      sources."@types/node-12.12.5"
       sources."@types/q-1.5.2"
       sources."JSONStream-1.3.5"
       sources."abs-svg-path-0.1.1"
@@ -3478,7 +3477,7 @@ in
       sources."json5-1.0.1"
       sources."jsonfile-4.0.0"
       sources."jsonparse-1.3.1"
-      sources."kaavio-4.0.15"
+      sources."kaavio-5.0.0"
       sources."lerp-1.0.3"
       sources."load-json-file-4.0.0"
       sources."loader-utils-1.2.3"
@@ -3583,7 +3582,7 @@ in
       sources."supports-color-5.5.0"
       sources."svg-pan-zoom-3.6.1"
       sources."svg-points-6.0.1"
-      sources."svgo-1.3.1"
+      sources."svgo-1.3.2"
       sources."symbol-observable-1.0.1"
       (sources."table-layout-0.4.5" // {
         dependencies = [
@@ -3636,10 +3635,10 @@ in
   svgo = nodeEnv.buildNodePackage {
     name = "svgo";
     packageName = "svgo";
-    version = "1.3.1";
+    version = "1.3.2";
     src = fetchurl {
-      url = "https://registry.npmjs.org/svgo/-/svgo-1.3.1.tgz";
-      sha512 = "2iv3AHKL+x2/nAvkg+vTv01aK94OFU6wTRbnv/K43mf1OdKEEA8xaQl7Wjs5Vrh9AlyXvyPd8fg6s6YzYdQTnQ==";
+      url = "https://registry.npmjs.org/svgo/-/svgo-1.3.2.tgz";
+      sha512 = "yhy/sQYxR5BkC98CY7o31VGsg014AKLEPxdfhora76l36hD9Rdy5NZA/Ocn6yayNPgSamYdtX2rFJdcv07AYVw==";
     };
     dependencies = [
       sources."@types/q-1.5.2"

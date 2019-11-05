@@ -3,6 +3,7 @@
 # import xml.etree.ElementTree as ET
 import argparse
 import csv
+import itertools
 import json
 from lxml import etree as ET
 import re
@@ -36,21 +37,34 @@ for row in csv.DictReader(BRIDGEDB2WD_PROPS_REQUEST.text.splitlines(), delimiter
     BRIDGEDB2WD_PROPS[row["datasource_name"]] = row["wikidata_property"]
 
 
-def convert2json(
-    path_in, path_out, pathway_iri, wp_id, pathway_version, dir_out, stub_out, wd_sparql
-):
+# see https://stackoverflow.com/a/8998040
+def grouper_it(n, iterable):
+    it = iter(iterable)
+    while True:
+        chunk_it = itertools.islice(it, n)
+        try:
+            first_el = next(chunk_it)
+        except StopIteration:
+            return
+        yield itertools.chain((first_el,), chunk_it)
+
+
+def gpml2json(path_in, path_out, pathway_iri, wp_id, pathway_version, wd_sparql):
     """Convert from GPML to JSON.
 
     Keyword arguments:
     path_in -- path in, e.g., ./WP4542_103412.gpml
-    path_out -- path out, e.g., ./WP4542_103412.svg
+    path_out -- path out, e.g., ./WP4542_103412.json
     pathway_iri -- e.g., http://identifiers.org/wikipathways/WP4542
     wp_id -- e.g., WP4542
     pathway_version -- e.g., 103412
-    dir_out -- directory out
-    stub_out -- filename w/out extension
     wd_sparql -- wikidata object for making queries
     """
+
+    dir_out = path.dirname(path_out)
+    # example base_out: 'WP4542.json'
+    base_out = path.basename(path_out)
+    [stub_out, ext_out_with_dot] = path.splitext(base_out)
 
     gpml2pvjson_cmd = (
         f"gpml2pvjson --id {pathway_iri} --pathway-version {pathway_version}"
@@ -120,6 +134,7 @@ def convert2json(
         entity_ids_by_bridgedb_key = dict()
         with open(path_out, "r") as json_f:
             pathway_data = json.load(json_f)
+            pathway = pathway_data["pathway"]
             entities_by_id = pathway_data["entitiesById"]
             for entity in entities_by_id.values():
                 if (
@@ -150,7 +165,7 @@ def convert2json(
                     else:
                         entity_ids_by_bridgedb_key[bridgedb_key].append(entity_id)
 
-            wd_pathway_id_result = wd_sparql.query(
+            pathway_id_query = (
                 '''
 SELECT ?item WHERE {
 ?item wdt:P2410 "'''
@@ -159,6 +174,18 @@ SELECT ?item WHERE {
 SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
 }"""
             )
+            wd_pathway_id_result = wd_sparql.query(pathway_id_query)
+
+            if len(wd_pathway_id_result["results"]["bindings"]) == 0:
+                print(f"Pathway ID {wp_id} not found in Wikidata. Retrying.")
+                # retry once
+                wd_pathway_id_result = wd_sparql.query(pathway_id_query)
+            if len(wd_pathway_id_result["results"]["bindings"]) == 0:
+                # if it still doesn't work, skip it
+                print(
+                    f"Pathway ID {wp_id} still not found in Wikidata. Skipping conversion."
+                )
+                return False
 
             wikidata_pathway_iri = wd_pathway_id_result["results"]["bindings"][0][
                 "item"
@@ -166,12 +193,17 @@ SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
             wikidata_pathway_identifier = wikidata_pathway_iri.replace(
                 "http://www.wikidata.org/entity/", ""
             )
-            print(f"wikidata_pathway_iri: {wikidata_pathway_iri}")
-            print(f"wikidata_pathway_identifier: {wikidata_pathway_identifier}")
 
-            # TODO: get xrefs from JSON.
-            # convert datasource to a wikidata property
-            # query wikidata via sparql to get qurls
+            # adding Wikidata IRI to sameAs property & ensuring no duplication
+            if not "sameAs" in pathway:
+                pathway["sameAs"] = wikidata_pathway_identifier
+            else:
+                same_as = pathway["sameAs"]
+                if type(same_as) == str:
+                    pathway["sameAs"] = list({wikidata_pathway_identifier, same_as})
+                else:
+                    same_as.append(wikidata_pathway_identifier)
+                    pathway["sameAs"] = list(set(same_as))
 
             headings = []
             queries = []
@@ -183,74 +215,63 @@ SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }
                 headings.append(heading)
                 wd_prop = BRIDGEDB2WD_PROPS[datasource]
                 queries.append(f'{heading} wdt:{wd_prop} "{xref_identifier}" .')
-            headings_str = " ".join(headings)
-            queries_str = (
-                "WHERE { "
-                + " ".join(queries)
-                + ' SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }}'
-            )
-            xref_query = f"SELECT {headings_str} {queries_str}"
-            xref_result = wd_sparql.query(xref_query)
 
-            bridgedb_keys = xref_result["head"]["vars"]
-            for binding in xref_result["results"]["bindings"]:
-                for bridgedb_key in bridgedb_keys:
-                    # TODO: are any of the values lists, not strings?
-                    wd_xref_identifier = binding[bridgedb_key]["value"].replace(
-                        "http://www.wikidata.org/entity/", ""
-                    )
-                    for entity_id in entity_ids_by_bridgedb_key[bridgedb_key]:
-                        entities_by_id[entity_id]["type"].append(
-                            f"Wikidata:{wd_xref_identifier}"
+            # Here we chunk the headings and queries into paired batches and
+            # make several smaller requests to WD. This is needed because some
+            # of the GET requests become too large to send as a single request.
+
+            batch_size = 10
+            for [heading_batch, query_batch] in zip(
+                grouper_it(batch_size, headings), grouper_it(batch_size, queries)
+            ):
+                headings_str = " ".join(heading_batch)
+                queries_str = (
+                    "WHERE { "
+                    + " ".join(query_batch)
+                    + ' SERVICE wikibase:label { bd:serviceParam wikibase:language "en" }}'
+                )
+                xref_query = f"SELECT {headings_str} {queries_str}"
+                xref_result = wd_sparql.query(xref_query)
+                xref_query = f"SELECT {headings_str} {queries_str}"
+                xref_result = wd_sparql.query(xref_query)
+
+                bridgedb_keys = xref_result["head"]["vars"]
+                for binding in xref_result["results"]["bindings"]:
+                    for bridgedb_key in bridgedb_keys:
+                        # TODO: is this check needed?
+                        if type(binding[bridgedb_key]["value"]) == list:
+                            raise Exception("Error: expected list and got string")
+
+                        wd_xref_identifier = binding[bridgedb_key]["value"].replace(
+                            "http://www.wikidata.org/entity/", ""
                         )
+                        for entity_id in entity_ids_by_bridgedb_key[bridgedb_key]:
+                            entities_by_id[entity_id]["type"].append(
+                                f"Wikidata:{wd_xref_identifier}"
+                            )
+
             pre_wd_json_f = f"{dir_out}/{stub_out}.pre_wd.json"
             rename(path_out, pre_wd_json_f)
             with open(path_out, "w") as f_out:
                 json.dump(pathway_data, f_out)
 
 
-def convert2svg(
-    path_in, path_out, pathway_iri, wp_id, pathway_version, dir_out, stub_out, wd_sparql
-):
-    """Convert from GPML to SVG.
+def json2svg(json_f, path_out, pathway_iri, wp_id, pathway_version, theme):
+    """Convert from JSON to SVG.
 
     Keyword arguments:
-    path_in -- path in, e.g., ./WP4542_103412.gpml
+    json_f -- path of JSON file, e.g., ./WP4542_103412.gpml
     path_out -- path out, e.g., ./WP4542_103412.svg
     pathway_iri -- e.g., http://identifiers.org/wikipathways/WP4542
     wp_id -- e.g., WP4542
     pathway_version -- e.g., 103412
-    dir_out -- directory out
-    stub_out -- filename w/out extension
-    wd_sparql -- wikidata object for making queries
+    theme -- theme (plain or dark) to use when converting to SVG (default plain)
     """
 
-    stub_out_components = stub_out.split(".")
-    bare_stub_out = stub_out_components.pop(0)
-    extra_exts_out = stub_out_components
-
-    extra_exts_out_count = len(extra_exts_out)
-    # For now, assume no inputs specify plain or dark
-    if extra_exts_out_count == 0:
-        theme = "plain"
-    elif extra_exts_out_count == 1:
-        theme = extra_exts_out[0]
-    else:
-        raise Exception(
-            f"Expected extra_exts_out_count of 0 or 1. Got {str(extra_exts_out_count)}."
-        )
-
-    json_f = f"{dir_out}/{bare_stub_out}.json"
-    convert2json(
-        path_in,
-        json_f,
-        pathway_iri,
-        wp_id,
-        pathway_version,
-        dir_out,
-        bare_stub_out,
-        wd_sparql,
-    )
+    dir_out = path.dirname(path_out)
+    # example base_out: 'WP4542.svg'
+    base_out = path.basename(path_out)
+    [stub_out, ext_out_with_dot] = path.splitext(base_out)
 
     pvjs_cmd = f"pvjs --theme {theme}"
     with open(json_f, "r") as f_in:
@@ -287,10 +308,13 @@ def convert2svg(
     for el in root.findall(".//pattern[@id='PatternQ47512']"):
         raise Exception("Unexpected pattern.")
 
+    edge_warning_sent = False
     for el in root.xpath(
         ".//svg:g/svg:g[contains(@class,'Edge')]/svg:g", namespaces=SVG_NS
     ):
-        print("Warning: Unexpected nested g element for edge.")
+        if not edge_warning_sent:
+            print("TODO: update pvjs to avoid having nested g elements for edges.")
+            edge_warning_sent = True
         # raise Exception("Unexpected nested g element for edge.")
 
     for el in root.xpath(
@@ -368,10 +392,7 @@ def convert2svg(
     for el in root.xpath(".//*[contains(@font-family,'Arial')]", namespaces=SVG_NS):
         el.set("font-family", "'Liberation Sans', Arial, sans-serif")
 
-    #        for el in root.xpath(
-    #            ".//svg:defs//svg:marker//svg:polygon[not(@fill)]", namespaces=SVG_NS
-    #        ):
-    #            el.set("fill", "currentColor")
+    # TODO: do we need to specify fill=currentColor for any elements?
 
     for el in root.xpath(".//svg:defs//svg:marker//*[not(@fill)]", namespaces=SVG_NS):
         el.set("fill", "currentColor")
@@ -403,6 +424,8 @@ def convert2svg(
         if not font_size:
             font_size = 5
 
+        x_translation = None
+        y_translation = None
         transform_full = el.attrib.get("transform")
         if transform_full:
             translate_matches = re.search(TRANSLATE_RE, transform_full)
@@ -418,10 +441,8 @@ def convert2svg(
         el.set("transform", f"translate({x_translation},{y_translation_corrected})")
 
     # Add link outs
-
     WIKIDATA_CLASS_RE = re.compile("Wikidata_Q[0-9]+")
     for el in root.xpath(".//*[contains(@class,'DataNode')]", namespaces=SVG_NS):
-        # classes = [ c for c in el.attrib.get("class").split(" ") ]
         wikidata_classes = list(
             filter(WIKIDATA_CLASS_RE.match, el.attrib.get("class").split(" "))
         )
@@ -436,9 +457,6 @@ def convert2svg(
             # make linkout open in new tab/window
             el.set("target", "_blank")
 
-        # print(ET.tostring(el, pretty_print=True))
-        # el.set("font-family", "'Liberation Sans', Arial, sans-serif")
-
     ###########
     # Run SVGO
     ###########
@@ -452,14 +470,11 @@ def convert2svg(
     )
     subprocess.run(args)
 
-    #############################
-    # SVG > .dark.svg
-    #############################
-    # path_out_dark_svg="$dir_out/$bare_stub_out.dark.svg"
-
     #########################################
     # Future enhancements for pretty version
     #########################################
+
+    # TODO: convert the following bash code into Python
 
     # Glyphs from reactome
     # TODO: how about using these: https://reactome.org/icon-lib
@@ -608,7 +623,9 @@ def convert2svg(
     #            """
 
 
-def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
+def convert(
+    path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100, theme="plain"
+):
     """Convert from GPML to another format like SVG.
 
     Keyword arguments:
@@ -616,7 +633,8 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
     path_out -- path out, e.g., ./WP4542_103412.svg
     pathway_iri -- e.g., http://identifiers.org/wikipathways/WP4542
     pathway_version -- e.g., 103412
-    scale -- scale to use when converting to PNG (default 100)"""
+    scale -- scale to use when converting to PNG (default 100)
+    theme -- theme (plain or dark) to use when converting to SVG (default plain)"""
     if not path.exists(path_in):
         raise Exception(f"Missing file '{path_in}'")
 
@@ -626,26 +644,22 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
 
     dir_in = path.dirname(path_in)
     base_in = path.basename(path_in)
-    # base_in example: 'WP4542.gpml'
+    # example base_in: 'WP4542.gpml'
     [stub_in, ext_in_with_dot] = path.splitext(base_in)
-    # get rid of the leading dot, e.g., '.gpml' to 'gpml'
+    # gettting rid of the leading dot, e.g., '.gpml' to 'gpml'
     ext_in = LEADING_DOT_RE.sub("", ext_in_with_dot)
 
     if ext_in != "gpml":
         # TODO: how about *.gpml.xml?
         raise Exception(f"Currently only accepting *.gpml for path_in")
-    # gpml_f = f"{dir_in}/{stub_in}.gpml"
     gpml_f = path_in
 
     dir_out = path.dirname(path_out)
-    # base_out example: 'WP4542.svg'
+    # example base_out: 'WP4542.svg'
     base_out = path.basename(path_out)
     [stub_out, ext_out_with_dot] = path.splitext(base_out)
-    # get rid of the leading dot, e.g., '.svg' to 'svg'
+    # getting rid of the leading dot, e.g., '.svg' to 'svg'
     ext_out = LEADING_DOT_RE.sub("", ext_out_with_dot)
-
-    # ns = {"gpml": "http://pathvisio.org/GPML/2013a"}
-    # ET.register_namespace(None, ns["gpml"])
 
     tree = ET.parse(gpml_f, parser=parser)
     root = tree.getroot()
@@ -660,7 +674,6 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
         old_f = f"{dir_in}/{stub_in}.{gpml_version}.gpml"
         rename(gpml_f, old_f)
         convert(old_f, gpml_f, pathway_iri, wp_id, pathway_version, scale)
-        # subprocess.run(shlex.split(f"pathvisio convert {old_f} {gpml_f}"))
 
     # trying to get wd ids via sparql via pywikibot
     site = pywikibot.Site("wikidata", "wikidata")
@@ -684,43 +697,17 @@ def convert(path_in, path_out, pathway_iri, wp_id, pathway_version, scale=100):
         #     mv "$path_out" "$path_out.noninterlaced.png"
         #     convert -interlace PNG "$path_out.noninterlaced.png" "$path_out"
     elif ext_out in ["json", "jsonld"]:
-        convert2json(
-            path_in,
-            path_out,
-            pathway_iri,
-            wp_id,
-            pathway_version,
-            dir_out,
-            stub_out,
-            wd_sparql,
-        )
+        gpml2json(path_in, path_out, pathway_iri, wp_id, pathway_version, wd_sparql)
     elif ext_out in ["svg", "pvjssvg"]:
         #############################
         # SVG
         #############################
-        convert2svg(
-            path_in,
-            path_out,
-            pathway_iri,
-            wp_id,
-            pathway_version,
-            dir_out,
-            stub_out,
-            wd_sparql,
-        )
-        # creating the dark version
-        pretty_theme = "dark"
-        convert2svg(
-            path_in,
-            # path_out
-            f"{dir_out}/{stub_out}.{pretty_theme}.svg",
-            pathway_iri,
-            wp_id,
-            pathway_version,
-            dir_out,
-            ".".join([stub_out, pretty_theme]),
-            wd_sparql,
-        )
+
+        json_f = f"{dir_out}/{stub_in}.json"
+        if not path.isfile(json_f):
+            gpml2json(path_in, json_f, pathway_iri, wp_id, pathway_version, wd_sparql)
+
+        json2svg(json_f, path_out, pathway_iri, wp_id, pathway_version, theme)
     else:
         raise Exception(f"Invalid output extension: '{ext_out}'")
 
@@ -757,6 +744,12 @@ def main():
         "--scale",
         type=int,
         help="Default: 100. Only valid for conversions to PNG format.",
+    )
+
+    group.add_argument(
+        "--theme",
+        type=str,
+        help="Default: plain. Options: plain or dark. Only valid for conversions to SVG format.",
     )
 
     args = parser.parse_args()
@@ -804,6 +797,7 @@ def main():
             wp_id=wp_id,
             pathway_version=pathway_version,
             scale=args.scale,
+            theme=args.theme,
         )
 
 
@@ -811,4 +805,5 @@ if __name__ == "__main__":
     try:
         main()
     finally:
-        print("done")
+        # do something
+        print("")

@@ -1,5 +1,10 @@
 { pkgs, callPackage }:
 
+# TODO: getting this warning when installing:
+# basename: invalid option -- 'w'
+# Try 'basename --help' for more information.
+
+
 let
   # TODO specifying Black in buildInputs, propagatedBuildInputs, etc.
   # doesn't put it on the PATH. (I think I tried all of the options.)
