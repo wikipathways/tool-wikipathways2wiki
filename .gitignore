@@ -9,3 +9,4 @@ pywikibot.lwp
 .mypy_cache/
 */.ipynb_checkpoints/
 */*.ipynb
+deleteme

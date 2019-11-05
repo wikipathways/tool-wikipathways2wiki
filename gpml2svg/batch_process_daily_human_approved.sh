@@ -29,10 +29,11 @@ for gpmlfile in $batch_name/*.gpml; do
   gpml2svg "$gpmlfile" || break
 done
 
-# examples to use for testing:
+# just for testing purposes:
 #for gpmlfile in $(ls -1 $batch_name/*.gpml | grep WP106); do done
 #for gpmlfile in $(ls -1 $batch_name/*.gpml | head -n 2); do done
 
+# TODO: get the log processing steps below working again
 #cp "$batch_name/*" "public/"
 #mv "$HOME/logs/$batch_name.log"
 #
