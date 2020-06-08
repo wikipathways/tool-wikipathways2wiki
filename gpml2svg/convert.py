@@ -451,7 +451,7 @@ def json2svg(json_f, path_out, pathway_iri, wp_id, pathway_version, theme):
             wikidata_id = wikidata_classes[0].replace("Wikidata_", "")
             el.tag = "{http://www.w3.org/2000/svg}a"
             # linkout_base = "https://www.wikidata.org/wiki/"
-            linkout_base = "https://tools.wmflabs.org/scholia/"
+            linkout_base = "https://scholia.toolforge.org/"
             el.set("{http://www.w3.org/1999/xlink}href", linkout_base + wikidata_id)
 
             # make linkout open in new tab/window
