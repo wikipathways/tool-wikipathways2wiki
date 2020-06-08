@@ -482,7 +482,7 @@ r /dev/stdin
 		if [ ! -z $wditem ]; then
 
 			#wikidata_iri=$(echo "$wditem" | awk -F'_' '{print "https://www.wikidata.org/wiki/"$NF}')
-			scholia_iri=$(echo "$wditem" | awk -F'_' '{print "https://tools.wmflabs.org/scholia/"$NF}')
+			scholia_iri=$(echo "$wditem" | awk -F'_' '{print "https://scholia.toolforge.org/"$NF}')
 
 			xmlstarlet ed -L -N svg='http://www.w3.org/2000/svg' \
 						-i "(/svg:svg/svg:g//*[@class])[$i]" \
