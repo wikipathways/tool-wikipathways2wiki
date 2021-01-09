@@ -30,7 +30,7 @@ LATEST_GPML_VERSION = "2013a"
 
 BRIDGEDB_REPO_BASE = "https://raw.githubusercontent.com/bridgedb/BridgeDb/master"
 BRIDGEDB2WD_PROPS_REQUEST = requests.get(
-    BRIDGEDB_REPO_BASE + "/org.bridgedb.bio/resources/org/bridgedb/bio/datasources.tsv"
+    BRIDGEDB_REPO_BASE + "/org.bridgedb.bio/src/main/resources/org/bridgedb/bio/datasources.tsv"
 )
 BRIDGEDB2WD_PROPS = dict()
 for row in csv.DictReader(BRIDGEDB2WD_PROPS_REQUEST.text.splitlines(), delimiter="\t"):
